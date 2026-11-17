@@ -35,11 +35,11 @@ MVVM pattern with JavaScript injection for web content manipulation.
 - `XDeck/View/ContentView.swift` — Multi-column layout, keyboard shortcuts, toolbar
 - `XDeck/View/WebView.swift` — `NSViewRepresentable` WKWebView wrapper with custom user agent
 - `XDeck/WebViewConfigurations.swift` — All JavaScript injection logic (ad blocking, theme detection, username extraction)
-- `XDeck/Config/AppConfig.swift` — JSON config model (`~/.config/XDeck/settings.json`)
+- `XDeck/Config/AppConfig.swift` — JSON config model (`~/.config/XDeckMulti/settings.json`)
 
 ### Configuration
 
-User settings live at `~/.config/XDeck/settings.json`. Schema at `~/.config/XDeck/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `custom` (arbitrary URL).
+User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `custom` (arbitrary URL).
 
 ## public/
 

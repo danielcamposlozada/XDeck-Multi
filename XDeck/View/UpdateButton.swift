@@ -24,13 +24,13 @@ struct UpdateButton: View {
                     HStack {
                         Text("v\(currentVersion) (v\(latestVersion) is available)")
                         Button("Update", action: {
-                            openURL(URL(string: "https://github.com/morishin/XDeck/releases/latest")!)
+                            openURL(URL(string: "https://github.com/danielcamposlozada/XDeck-Multi/releases/latest")!)
                         })
                         .buttonStyle(.bordered)
                     }
                 } else {
                     Button("v\(currentVersion)" + (Self.isDebug ? " (dev)" : ""), action: {
-                        openURL(URL(string: "https://github.com/morishin/XDeck/releases/tag/\(currentVersion)")!)
+                        openURL(URL(string: "https://github.com/danielcamposlozada/XDeck-Multi/releases/tag/\(currentVersion)")!)
                     }).buttonStyle(.plain)
                 }
             }
@@ -52,7 +52,7 @@ struct UpdateButton: View {
     }
 
     func checkForUpdate() async {
-        guard let url = URL(string: "https://github.com/morishin/XDeck/releases/latest") else { return }
+        guard let url = URL(string: "https://github.com/danielcamposlozada/XDeck-Multi/releases/latest") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"

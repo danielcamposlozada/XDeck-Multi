@@ -57,7 +57,7 @@ struct AppConfig: Decodable {
         return keys.isEmpty ? [""] : keys
     }
 
-    static let configDirectoryUrl = FileManager.default.homeDirectoryForCurrentUser.appending(components: ".config", "XDeck")
+    static let configDirectoryUrl = FileManager.default.homeDirectoryForCurrentUser.appending(components: ".config", "XDeckMulti")
     private static let configFileUrl = configDirectoryUrl.appending(path: "settings.json")
     private static let configSchemaFileUrl = configDirectoryUrl.appending(path: "schema.json")
     private static func createConfigFileIfNotExist() throws {
