@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+> [!IMPORTANT]
+> **Trabajo en curso: XDeck Multi (fork multicuenta, dos ediciones: macOS nativa en Swift y Windows + Linux con Electron + TypeScript).** Antes de hacer nada, leé `.claude/TRASPASO.md` (contexto, decisiones, estado y plan) y seguí la skill `.claude/skills/repo-github-profesional/SKILL.md`. Se trabaja con dos Claude Code (Mac y Linux Mint): ver la sección 10 del traspaso para saber qué le toca a cada máquina. Hablale a Daniel en español. Este bloque es temporal: se saca antes de publicar.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
@@ -24,6 +27,7 @@ MVVM pattern with JavaScript injection for web content manipulation.
 1. **Login**: `XDeckApp` → `LoginView` (WKWebView on x.com/login) → on successful login, username is extracted via JS and stored in `@AppStorage`
 2. **Main UI**: `ContentView` manages a horizontal `ScrollView` of `WebView` columns, each loading a different X.com URL based on `AppConfig`
 3. **JS Injection**: `WebViewConfigurations` builds `WKWebViewConfiguration` with multiple `WKUserScript`s injected at document end — handles ad hiding, theme detection, UI element removal, and message passing back to Swift via `WKScriptMessageHandler`
+4. **Multiple accounts**: a column can set `account` in `settings.json`. Each account key (trimmed, lowercased; `""` is the default session) maps to its own persistent `WKWebsiteDataStore` via `AccountSessions` in `WebViewConfigurations.swift` (`WKWebsiteDataStore(forIdentifier:)` with a UUID derived from the key; the default session stays `.default()`). On launch `ContentView` shows `LoginView` once per account key, in column order (`pendingLoginAccountKey`; accounts already signed in pass through, others can be skipped), and stores each account's profile URL in `profileUrls`. The first X column of each account keeps X's side header; the others hide it.
 
 ### Important files
 

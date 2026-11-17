@@ -24,6 +24,15 @@ struct AppConfig: Decodable {
 
         var type: ColumnType
         var url: String?
+        /// Optional name of the 𝕏 account this column belongs to. Columns with the same name share
+        /// one login session; columns without a name use the default session.
+        var account: String?
+
+        /// Key of the login session this column uses ("" is the default session).
+        /// Case-insensitive, so "Work" and "work" open the same session.
+        var accountKey: String {
+            account?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        }
 
         var isXColumn: Bool {
             switch type {
@@ -36,6 +45,16 @@ struct AppConfig: Decodable {
                 return false
             }
         }
+    }
+
+    /// The login sessions the 𝕏 columns need, in order of first appearance.
+    /// Without any 𝕏 column it's just the default session, as before accounts existed.
+    var accountKeys: [String] {
+        var keys: [String] = []
+        for column in columns where column.isXColumn && !keys.contains(column.accountKey) {
+            keys.append(column.accountKey)
+        }
+        return keys.isEmpty ? [""] : keys
     }
 
     static let configDirectoryUrl = FileManager.default.homeDirectoryForCurrentUser.appending(components: ".config", "XDeck")

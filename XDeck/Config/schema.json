@@ -18,6 +18,10 @@
               "type": {
                 "type": "string",
                 "enum": ["forYou", "following", "notifications", "profile"]
+              },
+              "account": {
+                "type": "string",
+                "description": "Name of the X account this column belongs to. Columns with the same name share one login; columns without it use the default login."
               }
             },
             "required": ["type"],
@@ -32,6 +36,10 @@
               },
               "url": {
                 "type": "string"
+              },
+              "account": {
+                "type": "string",
+                "description": "Name of the X account this column belongs to. Columns with the same name share one login; columns without it use the default login."
               }
             },
             "required": ["type", "url"],

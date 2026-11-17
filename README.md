@@ -48,3 +48,23 @@ Example
   ]
 }
 ```
+
+### Multiple accounts
+
+Add `"account"` to a column to show it with another 𝕏 account. Columns with the same account name share one login; columns without one use the default login. Account names are case-insensitive.
+
+```json
+{
+  "$schema": "./schema.json",
+  "columnWidth": 400,
+  "columns": [
+    { "type": "following" },
+    { "type": "notifications" },
+    { "type": "following", "account": "work" },
+    { "type": "notifications", "account": "work" },
+    { "type": "profile", "account": "work" }
+  ]
+}
+```
+
+On launch, XDeck shows a login screen for each account that isn't signed in yet, one at a time (accounts that are already signed in pass through on their own). "Skip for now" leaves an account signed out; its columns then show 𝕏's own login page. The first column of each account keeps 𝕏's side navigation, so every account has its own Post button. Each account's session is kept separately on disk (requires macOS 14 or later; on older versions it lasts until the app quits).

@@ -73,7 +73,10 @@ struct ContentView: View {
 
     @State var homeUrl: URL = URL(string: "https://x.com/home")!
     @State var notificationsUrl: URL = URL(string: "https://x.com/notifications")!
-    @State var profileUrl: URL? = nil
+    /// Profile URL of each signed-in account, keyed by account key ("" is the default session).
+    @State var profileUrls: [String: URL] = [:]
+    /// Accounts the user chose not to sign in to yet; their columns show 𝕏's own login page.
+    @State var skippedAccountKeys: Set<String> = []
 
     @Environment(\.openURL) private var openURL
 
@@ -106,19 +109,42 @@ struct ContentView: View {
     // The fit-to-content feature only makes sense when columnWidth is explicitly configured.
     private var isWindowFittingEnabled: Bool { appConfig.columnWidth != nil }
 
+    /// The account whose login screen is showing, or nil once every account is ready.
+    private var pendingLoginAccountKey: String? {
+        appConfig.accountKeys.first { profileUrls[$0] == nil && !skippedAccountKeys.contains($0) }
+    }
+
+    private var hasMultipleAccounts: Bool { appConfig.accountKeys.count > 1 }
+
+    /// Indices of the columns that keep 𝕏's side navigation: the first 𝕏 column of each account,
+    /// so every account has its own navigation, Post button and avatar.
+    private var sideHeaderColumnIndices: Set<Int> {
+        var seenAccountKeys: Set<String> = []
+        var indices: Set<Int> = []
+        for (index, column) in appConfig.columns.enumerated() where column.isXColumn {
+            if seenAccountKeys.insert(column.accountKey).inserted {
+                indices.insert(index)
+            }
+        }
+        return indices
+    }
+
     @ViewBuilder
     private func makeColumn(
-        column: AppConfig.Column, columnIndex: Int, isLeftMostXColumn: Bool, profileUrl: Binding<URL?>, columnWidth: CGFloat
+        column: AppConfig.Column, columnIndex: Int, isLeftMostXColumn: Bool, showsSideHeader: Bool,
+        profileUrl: URL?, columnWidth: CGFloat
     )
         -> some View
     {
-        let width = isLeftMostXColumn ? columnWidth + Self.sideHeaderWidth : columnWidth
+        let width = showsSideHeader ? columnWidth + Self.sideHeaderWidth : columnWidth
+        let accountKey = column.accountKey
 
         let baseConfiguration: [WebViewConfigurations.OnLoadScript] = {
             var scripts: [WebViewConfigurations.OnLoadScript] = [.global, .detectMediaOverlay(columnIndex: columnIndex)]
             if isLeftMostXColumn {
                 scripts.append(.findThemeColor)
-            } else if column.isXColumn {
+            }
+            if column.isXColumn && !showsSideHeader {
                 scripts.append(contentsOf: [.hideSideHeader, .hidePostArea])
             }
             if hideAds {
@@ -136,7 +162,7 @@ struct ContentView: View {
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
                 configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration + [.clickForYouTab])
+                    onLoadScripts: baseConfiguration + [.clickForYouTab], accountKey: accountKey)
             ).frame(width: width)
         case .following:
             WebView(
@@ -146,7 +172,7 @@ struct ContentView: View {
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
                 configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration + [.clickFollowingTab])
+                    onLoadScripts: baseConfiguration + [.clickFollowingTab], accountKey: accountKey)
             ).frame(width: width)
         case .notifications:
             WebView(
@@ -157,18 +183,18 @@ struct ContentView: View {
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
                 configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration)
+                    onLoadScripts: baseConfiguration, accountKey: accountKey)
             ).frame(width: width)
         case .profile:
-            if let url = Binding(profileUrl) {
+            if let profileUrl {
                 WebView(
-                    isLoading: $isLoading, url: url, alertMessage: $alertMessage,
+                    isLoading: $isLoading, url: .constant(profileUrl), alertMessage: $alertMessage,
                     messageFromWebView: $webViewMessage,
                     scriptExecutionRequest: column.isXColumn ? scriptExecutionRequest : nil,
                     scriptExecutionToken: column.isXColumn ? scriptExecutionToken : 0,
                     refreshSwitch: refreshSwitch,
                     configuration: WebViewConfigurations.makeConfiguration(
-                        onLoadScripts: baseConfiguration)
+                        onLoadScripts: baseConfiguration, accountKey: accountKey)
                 ).frame(width: width)
             }
         case .custom:
@@ -180,7 +206,7 @@ struct ContentView: View {
                     scriptExecutionToken: scriptExecutionToken,
                     refreshSwitch: refreshSwitch,
                     configuration: WebViewConfigurations.makeConfiguration(
-                        onLoadScripts: baseConfiguration)
+                        onLoadScripts: baseConfiguration, accountKey: accountKey)
                 ).frame(width: width)
             }
         }
@@ -195,6 +221,9 @@ struct ContentView: View {
         GeometryReader { geometry in
                     // Determine the number of columns from the appConfig.
                     let columnCount = appConfig.columns.count
+                    // Each account's first 𝕏 column keeps the side header, so there can be several.
+                    let sideHeaderColumnIndices = self.sideHeaderColumnIndices
+                    let sideHeaderCount = CGFloat(max(sideHeaderColumnIndices.count, 1))
 
                     // If a manual width is provided in the app config, use it;
                     // otherwise compute the base width dynamically.
@@ -207,8 +236,8 @@ struct ContentView: View {
                             if columnCount == 1 {
                                 return geometry.size.width - Self.sideHeaderWidth
                             } else {
-                                // With multiple columns, subtract the side header width from the total available width.
-                                return (geometry.size.width - Self.sideHeaderWidth) / CGFloat(columnCount)
+                                // With multiple columns, subtract the side headers' width from the total available width.
+                                return (geometry.size.width - Self.sideHeaderWidth * sideHeaderCount) / CGFloat(columnCount)
                             }
                         }
                     }()
@@ -271,7 +300,7 @@ struct ContentView: View {
                             )
                         }
 
-                        if profileUrl != nil {
+                        if pendingLoginAccountKey == nil {
                             VStack(alignment: .leading, spacing: 0) {
                                 // Its own ScrollView, separate from the bottom toolbar below: the toolbar's
                                 // natural width can be wider than a narrow column configuration, and scrolling
@@ -280,18 +309,21 @@ struct ContentView: View {
                                     VStack(alignment: .leading, spacing: 0) {
                                         HStack(spacing: 0) {
                                             ForEach(appConfig.columns.indices, id: \.self) { index in
+                                                let column = appConfig.columns[index]
                                                 let isLeftMostXColumn =
                                                     index == (appConfig.columns.firstIndex { $0.isXColumn } ?? -1)
+                                                let showsSideHeader = sideHeaderColumnIndices.contains(index)
                                                 let isExpanded = expandedColumnIndex == index
                                                 let isHidden = expandedColumnIndex != nil && !isExpanded
                                                 let effectiveWidth: CGFloat = isExpanded
-                                                    ? (isLeftMostXColumn ? geometry.size.width - Self.sideHeaderWidth : geometry.size.width)
+                                                    ? (showsSideHeader ? geometry.size.width - Self.sideHeaderWidth : geometry.size.width)
                                                     : dynamicColumnWidth
                                                 makeColumn(
-                                                    column: appConfig.columns[index],
+                                                    column: column,
                                                     columnIndex: index,
                                                     isLeftMostXColumn: isLeftMostXColumn,
-                                                    profileUrl: $profileUrl,
+                                                    showsSideHeader: showsSideHeader,
+                                                    profileUrl: profileUrls[column.accountKey],
                                                     columnWidth: isHidden ? 0 : effectiveWidth
                                                 )
                                                 .opacity(isHidden ? 0 : 1)
@@ -405,11 +437,22 @@ struct ContentView: View {
                                 }
                             }
                         } else {
+                            // One account at a time; accounts already signed in pass through on their own.
+                            let loginAccountKey = pendingLoginAccountKey ?? ""
+                            let loginAccountLabel: String? = hasMultipleAccounts
+                                ? (loginAccountKey.isEmpty ? "default" : loginAccountKey) : nil
+                            let skipLogin: (() -> Void)? = hasMultipleAccounts
+                                ? { _ = skippedAccountKeys.insert(loginAccountKey) } : nil
                             LoginView(
+                                accountKey: loginAccountKey,
+                                accountLabel: loginAccountLabel,
+                                onSkip: skipLogin,
                                 isShowingAlert: $isShowingAlert,
                                 alertMessage: $alertMessage,
                                 loginViewMessage: $loginViewMessage
                             )
+                            // A fresh web view for each account, so each one uses its own session.
+                            .id(loginAccountKey)
                         }
 
                     }
@@ -430,8 +473,10 @@ struct ContentView: View {
                            let message = try? JSONDecoder().decode(WebViewMessage.self, from: messageData) {
                             switch message.type {
                             case .userName:
-                                if let url = URL(string: "https://x.com/\(message.body)") {
-                                    profileUrl = url
+                                // The login screen is showing the account that's still pending.
+                                if let url = URL(string: "https://x.com/\(message.body)"),
+                                   let accountKey = pendingLoginAccountKey {
+                                    profileUrls[accountKey] = url
                                 }
                             case .themeColor:
                                 let color = Color(hex: message.body)
@@ -440,6 +485,8 @@ struct ContentView: View {
                             case .mediaOverlay:
                                 break
                             }
+                            // Clear it so the next account's messages register even if they repeat this one.
+                            self.loginViewMessage = nil
                         }
                     }
                     .onChange(of: webViewMessage) { rawMessage in
@@ -448,9 +495,8 @@ struct ContentView: View {
                            let message = try? JSONDecoder().decode(WebViewMessage.self, from: messageData) {
                             switch message.type {
                             case .userName:
-                                if let url = URL(string: "https://x.com/\(message.body)") {
-                                    profileUrl = url
-                                }
+                                // Usernames come from the login screen, one per account.
+                                break
                             case .themeColor:
                                 let color = Color(hex: message.body)
                                 backgroundColor = color

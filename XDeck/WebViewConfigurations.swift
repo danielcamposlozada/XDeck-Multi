@@ -1,5 +1,40 @@
+import CryptoKit
 import Foundation
 import WebKit
+
+/// One persistent, isolated WebKit session per account named in settings.json, so each account
+/// keeps its own cookies and login. Columns without an account use the default session, which
+/// keeps existing logins working.
+enum AccountSessions {
+    private static var dataStores: [String: WKWebsiteDataStore] = [:]
+
+    static func dataStore(for accountKey: String) -> WKWebsiteDataStore {
+        if accountKey.isEmpty {
+            return .default()
+        }
+        if let dataStore = dataStores[accountKey] {
+            return dataStore
+        }
+        let dataStore: WKWebsiteDataStore
+        if #available(macOS 14.0, *) {
+            dataStore = WKWebsiteDataStore(forIdentifier: identifier(for: accountKey))
+        } else {
+            // Persistent per-account sessions need macOS 14. On older systems the session
+            // lasts until the app quits.
+            dataStore = .nonPersistent()
+        }
+        dataStores[accountKey] = dataStore
+        return dataStore
+    }
+
+    /// A stable UUID for an account key, so the same key always reopens the same session.
+    private static func identifier(for accountKey: String) -> UUID {
+        var bytes = Array(SHA256.hash(data: Data("XDeck.account.\(accountKey)".utf8)).prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50 // version 5 (name-based)
+        bytes[8] = (bytes[8] & 0x3F) | 0x80 // RFC 4122 variant
+        return NSUUID(uuidBytes: bytes) as UUID
+    }
+}
 
 struct WebViewConfigurations {
     enum OnLoadScript {
@@ -39,12 +74,13 @@ struct WebViewConfigurations {
 
     static let handlerName = "handler";
 
-    static func makeConfiguration(onLoadScripts: [OnLoadScript]) -> WKWebViewConfiguration {
+    static func makeConfiguration(onLoadScripts: [OnLoadScript], accountKey: String = "") -> WKWebViewConfiguration {
         let script = [
             onLoadScripts.filter({ !$0.runAfterLoad }).map(\.scriptContent).joined(separator: "\n"),
             wrapOnLoad(contents: onLoadScripts.filter({ $0.runAfterLoad }).map(\.scriptContent)),
         ].joined(separator: "\n")
         let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = AccountSessions.dataStore(for: accountKey)
         let userContentController = WKUserContentController()
         configuration.userContentController = userContentController
         let userScript = WKUserScript(
