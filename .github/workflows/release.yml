@@ -1,29 +1,27 @@
 name: Release
 
-# Pushing a version tag (e.g. "3.1") triggers a release build; after notarization
-# the artifact is attached to GitHub Releases. Tag format must stay "MAJOR.MINOR"
-# with no "v" prefix — it's referenced as-is by the Homebrew Cask formula
-# (releases/download/#{version}/XDeck-#{version}.zip) and by the in-app update
-# check (UpdateButton.swift), which parses /tag/([0-9]+\.[0-9]+) from the tag URL.
+# Pushing a version tag (for example "1.0") builds the three platforms and creates a DRAFT
+# release with every file and its SHA-256. Review the draft on GitHub and publish it by hand.
+#
+# Tag format: plain MAJOR.MINOR, no "v" prefix. The in-app update check of both editions parses
+# /tag/([0-9]+\.[0-9]+) from the releases/latest redirect.
+#
+# The builds are not signed: macOS asks to confirm the first launch (right-click → Open) and
+# Windows SmartScreen shows "More info → Run anyway". The README explains both.
 on:
   push:
     tags:
       - "[0-9]+.[0-9]+"
 
 permissions:
-  contents: write # required to create a release with the default GITHUB_TOKEN
+  contents: read
 
 jobs:
-  release:
+  macos:
     runs-on: macos-26
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # XDeck/XDeck.icon uses the Icon Composer format introduced in Xcode 26;
-      # older Xcode versions copy it as a plain resource instead of compiling
-      # it into the app icon, so Xcode 26 is required here.
       - name: Select Xcode 26
         run: |
           if [ -d "/Applications/Xcode_26.app" ]; then
@@ -31,74 +29,100 @@ jobs:
           fi
           xcodebuild -version
 
-      # Import the Developer ID Application certificate (.p12) into a temporary keychain.
-      - name: Import signing certificate
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      - name: Build (ad-hoc signed)
         run: |
-          CERT_PATH="$RUNNER_TEMP/cert.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
-
-      # Set the app version to match the tag so the in-app update check
-      # (CFBundleShortVersionString) and the Homebrew Cask formula stay in sync.
-      - name: Archive
-        run: |
-          VERSION="$GITHUB_REF_NAME"
-          xcodebuild archive \
+          xcodebuild build \
             -project XDeck.xcodeproj \
             -scheme XDeck \
             -configuration Release \
-            -archivePath "$RUNNER_TEMP/XDeck.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/build" \
             -destination "generic/platform=macOS" \
-            MARKETING_VERSION="$VERSION" \
+            MARKETING_VERSION="$GITHUB_REF_NAME" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM=4GERXBURZN \
-            OTHER_CODE_SIGN_FLAGS="--timestamp"
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
 
-      - name: Export
+      - name: Zip
         run: |
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/XDeck.xcarchive" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist ExportOptions.plist
+          APP=$(find "$RUNNER_TEMP/build/Build/Products/Release" -maxdepth 1 -name '*.app' | head -n 1)
+          mkdir -p out
+          ditto -c -k --keepParent "$APP" "out/XDeck-Multi-$GITHUB_REF_NAME-macOS.zip"
 
-      - name: Notarize & staple
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          VERSION="$GITHUB_REF_NAME"
-          APP="$RUNNER_TEMP/export/XDeck.app"
-          ZIP="$RUNNER_TEMP/notarize.zip"
-          # Zip the app before submitting for notarization.
-          ditto -c -k --keepParent "$APP" "$ZIP"
-          xcrun notarytool submit "$ZIP" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait
-          # Staple the notarization ticket to the .app and repack for distribution.
-          xcrun stapler staple "$APP"
-          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/XDeck-$VERSION.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out/*
 
-      - name: Create GitHub Release
+  desktop:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      # package.json holds MAJOR.MINOR.0; the tag sets MAJOR.MINOR.
+      - name: Set the version from the tag
+        shell: bash
+        run: npm version "$GITHUB_REF_NAME.0" --no-git-tag-version --allow-same-version
+
+      - run: npm run check
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: npm run dist:linux
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          path: |
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [macos, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+
+      - name: Create the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="$GITHUB_REF_NAME"
-          gh release create "$GITHUB_REF_NAME" \
-            "$RUNNER_TEMP/XDeck-$VERSION.zip" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
+          cd files
+          {
+            echo "## Downloads"
+            echo
+            echo "| File | SHA-256 |"
+            echo "|---|---|"
+            for f in *; do
+              echo "| \`$f\` | \`$(sha256sum "$f" | cut -d ' ' -f 1)\` |"
+            done
+          } > ../notes.md
+          gh release create "$GITHUB_REF_NAME" * \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "XDeck Multi $GITHUB_REF_NAME" \
+            --notes-file ../notes.md \
+            --generate-notes \
+            --draft
