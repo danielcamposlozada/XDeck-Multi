@@ -20,7 +20,7 @@ jobs:
   macos:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode 26
         run: |
@@ -47,7 +47,7 @@ jobs:
           mkdir -p out
           ditto -c -k --keepParent "$APP" "out/XDeck-Multi-$GITHUB_REF_NAME-macOS.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: out/*
@@ -61,9 +61,9 @@ jobs:
       run:
         working-directory: desktop
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -86,7 +86,7 @@ jobs:
         if: runner.os == 'Windows'
         run: npm run dist:win
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ runner.os }}
           path: |
@@ -101,7 +101,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: files
           merge-multiple: true
