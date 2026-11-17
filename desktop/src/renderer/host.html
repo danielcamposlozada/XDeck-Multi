@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <title>XDeck Multi</title>
+    <link rel="stylesheet" href="host.css" />
+  </head>
+  <body>
+    <section id="login" hidden>
+      <header id="login-banner" hidden>
+        <h1 id="login-label"></h1>
+        <button id="skip" type="button" class="bordered" hidden>Skip for now</button>
+      </header>
+      <div id="login-area" class="view-area"></div>
+    </section>
+
+    <section id="deck" hidden>
+      <div id="columns" class="view-area"><div id="spacer"></div></div>
+      <footer id="toolbar">
+        <div class="group tight">
+          <button id="github" type="button" class="icon" title="XDeck Multi on GitHub" aria-label="XDeck Multi on GitHub">
+            <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          </button>
+          <span id="version"></span>
+        </div>
+        <button id="dark-mode" type="button" role="switch" class="switch appearance" aria-label="Dark mode">
+          <svg class="moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+          <span class="knob"></span>
+          <svg class="sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></g></svg>
+        </button>
+        <label class="group">
+          <span>Hide Ads</span>
+          <button id="hide-ads" type="button" role="switch" class="switch" aria-label="Hide Ads"><span class="knob"></span></button>
+        </label>
+        <button id="sponsor" type="button" class="bordered">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 8h14v5a6 6 0 0 1-6 6H9a6 6 0 0 1-6-6V8Zm14 1h1.5a3 3 0 0 1 0 6H17v-2h1.5a1 1 0 0 0 0-2H17V9ZM2 20h16v2H2v-2Z"/></svg>
+          Buy me a coffee
+        </button>
+        <span><kbd>Ctrl</kbd><kbd>+</kbd> Zoom In</span>
+        <span><kbd>Ctrl</kbd><kbd>-</kbd> Zoom Out</span>
+        <span><kbd>Ctrl</kbd><kbd>.</kbd> Reset Zoom</span>
+        <span><kbd>Ctrl</kbd><kbd>R</kbd> Refresh</span>
+        <span id="fit-hint"><kbd>Ctrl</kbd><kbd>F</kbd> Fit Window</span>
+        <span><kbd>Ctrl</kbd><kbd>,</kbd> Settings</span>
+      </footer>
+    </section>
+
+    <section id="error" hidden>
+      <h1>Failed to load settings.json</h1>
+      <p id="error-message"></p>
+      <p><code id="error-path"></code></p>
+      <button id="open-settings" type="button" class="bordered">Open Settings Folder</button>
+    </section>
+
+    <script src="host.js"></script>
+  </body>
+</html>

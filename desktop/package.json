@@ -1,0 +1,40 @@
+{
+  "name": "xdeck-multi",
+  "productName": "XDeck Multi",
+  "version": "1.0.0",
+  "description": "Multi-account, TweetDeck-style X client. A fork of XDeck.",
+  "homepage": "https://github.com/danielcamposlozada/XDeck-Multi",
+  "repository": "github:danielcamposlozada/XDeck-Multi",
+  "license": "MIT",
+  "author": {
+    "name": "Daniel Campos Lozada",
+    "email": "9952255+danielcamposlozada@users.noreply.github.com"
+  },
+  "private": true,
+  "main": "dist/main/main.js",
+  "desktopName": "xdeck-multi.desktop",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint --max-warnings 0 .",
+    "test": "vitest run",
+    "smoke": "npm run build && electron . --smoke-test",
+    "check": "npm run typecheck && npm run lint && npm test",
+    "icons": "node scripts/render-icons.mjs",
+    "dist:linux": "npm run build && electron-builder --config electron-builder.config.cjs --linux --publish never",
+    "dist:win": "npm run build && electron-builder --config electron-builder.config.cjs --win --publish never"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^24.19.2",
+    "electron": "^45.3.3",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.15.0",
+    "globals": "^17.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.0"
+  }
+}
