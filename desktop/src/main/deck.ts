@@ -52,7 +52,6 @@ import {
   extractVersion,
   isNewerVersion,
   releaseUrl,
-  shortVersion,
 } from './version';
 
 const LOGIN_URL = 'https://x.com/login';
@@ -420,7 +419,7 @@ export class Deck {
           contentWidth: this.computeColumnsLayout(this.hostLayout?.area.width ?? 0).contentWidth,
           isWindowFittingEnabled: this.config?.columnWidth !== undefined,
           version: {
-            current: shortVersion(app.getVersion()),
+            current: app.getVersion(),
             isDev: !app.isPackaged,
             latest: this.latestVersion,
           },
@@ -459,7 +458,7 @@ export class Deck {
         void shell.openPath(this.options.configDirectory);
         break;
       case 'open-link': {
-        const version = shortVersion(app.getVersion());
+        const version = app.getVersion();
         const urls = {
           github: REPOSITORY_URL,
           sponsor: SPONSOR_URL,
@@ -684,7 +683,7 @@ export class Deck {
     try {
       const response = await net.fetch(LATEST_RELEASE_URL, { method: 'HEAD', redirect: 'follow' });
       const latest = extractVersion(response.url);
-      if (isNewerVersion(latest, shortVersion(app.getVersion()))) {
+      if (isNewerVersion(latest, app.getVersion())) {
         this.latestVersion = latest;
         this.sendState();
       }

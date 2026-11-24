@@ -1,17 +1,18 @@
 name: Release
 
-# Pushing a version tag (for example "1.0") builds the three platforms and creates a DRAFT
+# Pushing a version tag (for example "1.0.0") builds the three platforms and creates a DRAFT
 # release with every file and its SHA-256. Review the draft on GitHub and publish it by hand.
 #
-# Tag format: plain MAJOR.MINOR, no "v" prefix. The in-app update check of both editions parses
-# /tag/([0-9]+\.[0-9]+) from the releases/latest redirect.
+# Tag format: plain MAJOR.MINOR.PATCH, no "v" prefix. The tags 1.0 to 3.3 are the original
+# XDeck's, so XDeck Multi uses three numbers. The in-app update check of both editions parses
+# the version from the releases/latest redirect.
 #
 # The builds are not signed: macOS asks to confirm the first launch (right-click → Open) and
 # Windows SmartScreen shows "More info → Run anyway". The README explains both.
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: read
@@ -71,10 +72,9 @@ jobs:
 
       - run: npm ci
 
-      # package.json holds MAJOR.MINOR.0; the tag sets MAJOR.MINOR.
       - name: Set the version from the tag
         shell: bash
-        run: npm version "$GITHUB_REF_NAME.0" --no-git-tag-version --allow-same-version
+        run: npm version "$GITHUB_REF_NAME" --no-git-tag-version --allow-same-version
 
       - run: npm run check
 

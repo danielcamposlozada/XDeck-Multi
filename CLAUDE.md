@@ -44,14 +44,11 @@ Static landing page website — separate from the macOS app. Not part of the Xco
 
 ## Release
 
-Releases are built and published by `.github/workflows/release.yml`, triggered by pushing a tag.
+Releases are built by `.github/workflows/release.yml`, triggered by pushing a version tag.
 
-- **Tag format**: plain `MAJOR.MINOR` (e.g. `3.2`), **no `v` prefix**. This exact format is depended on by:
-  - The Homebrew Cask formula (`xdeck.rb` in `Homebrew/homebrew-cask`), whose `url` is `releases/download/#{version}/XDeck-#{version}.zip`
-  - The in-app update check in `XDeck/View/UpdateButton.swift`, which parses `/tag/([0-9]+\.[0-9]+)` from the redirect URL of `releases/latest`
-- **Runner requirement**: the workflow builds on `macos-26` with Xcode 26 explicitly selected. `XDeck/XDeck.icon` uses the Icon Composer (`.icon`) format introduced in Xcode 26 — older Xcode versions copy it as a plain resource instead of compiling it into the app icon, silently shipping an app with no icon (this happened with the 3.1 release). Don't downgrade the runner/Xcode version without re-verifying the icon compiles.
-- **Signing/notarization**: Developer ID Application cert (Team ID `4GERXBURZN`), notarized via `notarytool`, stapled, then zipped as `XDeck-{version}.zip` and attached to a GitHub Release via `gh release create`.
-- **Required repo secrets**: `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `KEYCHAIN_PASSWORD`, `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` (same Apple Developer account/cert as the `Voxt` project).
-- **Homebrew Cask**: no manual bump needed. The cask has no `livecheck` block, so Homebrew falls back to its default `Git` strategy (lists tags via `git ls-remote`), which correctly picks up these version tags. BrewTestBot periodically opens a PR to `Homebrew/homebrew-cask` bumping `version`/`sha256` — just review and merge it (or run `brew bump-cask-pr --version=X.Y xdeck` to trigger it immediately).
+- **Tag format**: plain `MAJOR.MINOR.PATCH` (e.g. `1.0.0`), **no `v` prefix**. The tags `1.0` to `3.3` in this fork belong to the original XDeck, so XDeck Multi always uses three numbers. Both editions' update checks (`XDeck/View/UpdateButton.swift`, `desktop/src/main/version.ts`) parse the version from the `releases/latest` redirect.
+- **What it builds**: the macOS app (ad-hoc signed, `XDeck-Multi-<version>-macOS.zip`), the Windows installer and the Linux AppImage and .deb, then a **draft** release with every file and its SHA-256. Publish the draft by hand after checking it.
+- **Runner requirement**: the macOS job runs on `macos-26` with Xcode 26 explicitly selected. `XDeck/XDeck.icon` uses the Icon Composer (`.icon`) format introduced in Xcode 26; older Xcode versions ship an app with no icon. GitHub's macOS runners are sometimes unavailable ("not acquired by Runner"); re-run the job, or build the zip locally with the README command and attach it.
+- **No Apple or Microsoft signing**: the README explains the first launch on each system.
 
-To release: bump `MARKETING_VERSION` in `project.pbxproj` if desired (the CI build overrides it from the tag anyway), then `git tag X.Y && git push origin X.Y`.
+To release: set `MARKETING_VERSION` in `project.pbxproj` (CI overrides it from the tag anyway), add the version to `CHANGELOG.md`, then `git tag X.Y.Z && git push origin X.Y.Z`.

@@ -76,7 +76,7 @@ struct UpdateButton: View {
     }
 
     func extractVersion(from url: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "/tag/([0-9]+\\.[0-9]+)"),
+        guard let regex = try? NSRegularExpression(pattern: "/tag/([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)"),
               let match = regex.firstMatch(in: url, range: NSRange(location: 0, length: url.utf16.count)),
               let range = Range(match.range(at: 1), in: url) else {
             return "0.0"

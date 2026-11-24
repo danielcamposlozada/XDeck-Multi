@@ -1,4 +1,5 @@
-// Versions are MAJOR.MINOR, like the git tags (for example "1.0"), in both editions.
+// Versions are MAJOR.MINOR.PATCH, like the git tags (for example "1.0.0"), in both editions.
+// The tags 1.0 to 3.3 in this repository are the original XDeck's.
 
 export const REPOSITORY_URL = 'https://github.com/danielcamposlozada/XDeck-Multi';
 export const LATEST_RELEASE_URL = `${REPOSITORY_URL}/releases/latest`;
@@ -7,14 +8,9 @@ export function releaseUrl(version: string): string {
   return `${REPOSITORY_URL}/releases/tag/${version}`;
 }
 
-/** "1.0.0" → "1.0" */
-export function shortVersion(version: string): string {
-  return version.split('.').slice(0, 2).join('.');
-}
-
 /** The version in a release URL, as UpdateButton.extractVersion does on macOS. */
 export function extractVersion(url: string): string {
-  return /\/tag\/([0-9]+\.[0-9]+)/.exec(url)?.[1] ?? '0.0';
+  return /\/tag\/([0-9]+\.[0-9]+(?:\.[0-9]+)?)/.exec(url)?.[1] ?? '0.0';
 }
 
 export function isNewerVersion(candidate: string, current: string): boolean {

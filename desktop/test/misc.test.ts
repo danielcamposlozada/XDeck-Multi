@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { decideNavigation, isWebUrl } from '../src/main/navigation';
 import { clampZoom, isDarkThemeColor, normalizeThemeColor, parsePrefs } from '../src/main/prefs';
-import { extractVersion, isNewerVersion, shortVersion } from '../src/main/version';
+import { extractVersion, isNewerVersion } from '../src/main/version';
 
 describe('version', () => {
-  it('uses MAJOR.MINOR like the git tags', () => {
-    expect(shortVersion('1.0.0')).toBe('1.0');
+  it('reads MAJOR.MINOR.PATCH tags, and the older MAJOR.MINOR ones', () => {
+    expect(extractVersion('https://github.com/a/b/releases/tag/1.0.1')).toBe('1.0.1');
     expect(extractVersion('https://github.com/a/b/releases/tag/1.2')).toBe('1.2');
     expect(extractVersion('https://github.com/a/b/releases')).toBe('0.0');
   });
@@ -14,6 +14,8 @@ describe('version', () => {
     expect(isNewerVersion('1.10', '1.9')).toBe(true);
     expect(isNewerVersion('1.0', '1.0')).toBe(false);
     expect(isNewerVersion('0.0', '1.0')).toBe(false);
+    expect(isNewerVersion('1.0.1', '1.0.0')).toBe(true);
+    expect(isNewerVersion('1.0.0', '1.0.0')).toBe(false);
   });
 });
 
