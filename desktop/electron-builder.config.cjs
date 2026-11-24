@@ -1,8 +1,6 @@
-// Release file names use the same MAJOR.MINOR version as the macOS edition and the git tags
-// (for example 1.0), so the in-app update check and the release assets match on every platform.
+// Release file names use the same MAJOR.MINOR.PATCH version as the macOS edition and the git tags
+// (for example 1.0.0), so the release assets match on every platform.
 const { version } = require('./package.json');
-
-const shortVersion = version.split('.').slice(0, 2).join('.');
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -22,11 +20,11 @@ module.exports = {
     synopsis: 'Multi-account, TweetDeck-style X client',
     description: 'XDeck Multi shows several X timelines side by side, each column with its own account. A fork of XDeck.',
   },
-  appImage: { artifactName: `XDeck-Multi-${shortVersion}-x86_64.AppImage` },
-  deb: { artifactName: `xdeck-multi_${shortVersion}_amd64.deb` },
+  appImage: { artifactName: `XDeck-Multi-${version}-x86_64.AppImage` },
+  deb: { artifactName: `xdeck-multi_${version}_amd64.deb` },
   win: { target: ['nsis'], icon: 'build/icon.png' },
   nsis: {
-    artifactName: `XDeck-Multi-Setup-${shortVersion}.exe`,
+    artifactName: `XDeck-Multi-Setup-${version}.exe`,
     oneClick: false,
     allowToChangeInstallationDirectory: true,
   },
