@@ -48,9 +48,6 @@
 #### Búsqueda al lado de tu timeline
 ![Una columna de búsqueda con su buscador, al lado del timeline Para ti](.github/assets/search.png)
 
-#### Modo claro
-![XDeck Multi en modo claro](.github/assets/hero-light.png)
-
 ## Instalación
 
 Descargá el archivo para tu sistema desde la [última versión](https://github.com/danielcamposlozada/XDeck-Multi/releases/latest).
