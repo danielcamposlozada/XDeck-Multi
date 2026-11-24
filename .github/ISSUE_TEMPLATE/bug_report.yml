@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work as expected.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw. A screenshot helps a lot.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: XDeck Multi version
+      placeholder: "1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true
+  - type: input
+    id: system-version
+    attributes:
+      label: System version
+      placeholder: macOS 26.1, Windows 11, Ubuntu 24.04…
+  - type: textarea
+    id: settings
+    attributes:
+      label: settings.json
+      description: Optional. Remove anything you don't want to share.
+      render: json

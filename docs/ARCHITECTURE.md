@@ -10,7 +10,7 @@ There are two editions of the app in this repository:
 | Language | Swift, SwiftUI | TypeScript (strict) |
 | Web engine | WebKit (`WKWebView`) | Chromium (Electron `WebContentsView`) |
 | Session per account | `WKWebsiteDataStore(forIdentifier:)` | `session.fromPartition('persist:account-<key>')` |
-| Settings | `~/.config/XDeck/settings.json` | `~/.config/XDeckMulti/settings.json`, `%APPDATA%\XDeckMulti\settings.json` |
+| Settings | `~/.config/XDeckMulti/settings.json` (inside the app container) | `~/.config/XDeckMulti/settings.json`, `%APPDATA%\XDeckMulti\settings.json` |
 
 Both read the same `settings.json` format and run the same scripts from [`shared/`](../shared).
 
