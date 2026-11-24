@@ -20,7 +20,11 @@ brew install --cask xdeck
 
 ## Configuration
 
-`⌘,` and edit `settings.json`.
+Click **Columns** in the bottom toolbar to add, remove and reorder columns. Changes apply right away and are saved to `settings.json`. Each column shows its type and account at the top.
+
+Column types: `forYou`, `following`, `notifications`, `profile`, `search` (𝕏's Explore page, with the search box) and `custom` (any URL, such as a list).
+
+For everything else, press `⌘,` and edit `settings.json`.
 
 Example
 

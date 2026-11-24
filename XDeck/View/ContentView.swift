@@ -46,7 +46,7 @@ private struct WindowWidthFitter: NSViewRepresentable {
 }
 
 struct ContentView: View {
-    var appConfig: AppConfig
+    @State var appConfig: AppConfig
 
     @AppStorage("pageZoom") var pageZoom: Double = 1
     @AppStorage("isDarkMode") var isDarkMode: Bool = false
@@ -65,7 +65,8 @@ struct ContentView: View {
 
     @State var webViewMessage: String? = nil
     @State var loginViewMessage: String? = nil
-    @State var expandedColumnIndex: Int? = nil
+    @State var expandedColumnID: UUID? = nil
+    @State var isShowingColumnsSheet = false
 
     @State var measuredContentWidth: CGFloat = 0
     @State var hasFitWindowToContent = false
@@ -81,6 +82,8 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
 
     private static let sideHeaderWidth: CGFloat = AppConfig.sideHeaderWidth
+    /// 𝕏's Explore page, which has the search box at the top.
+    private static let searchUrl = URL(string: "https://x.com/explore")!
     // Covers the reload plus the theme-color stabilization debounce in findThemeColor; acts as a
     // fallback in case the confirmation message from the page never arrives.
     private static let darkModeUpdateTimeout: TimeInterval = 5
@@ -101,7 +104,24 @@ struct ContentView: View {
     }
 
     init(appConfig: AppConfig) {
-        self.appConfig = appConfig
+        _appConfig = State(initialValue: appConfig)
+    }
+
+    /// Saves the columns edited in the Columns sheet and shows them right away, without a restart.
+    private func applyColumns(_ columns: [AppConfig.Column]) {
+        do {
+            try AppConfig.saveColumns(columns)
+        } catch {
+            alertMessage = "Couldn't save settings.json. The new columns will be lost when the app quits."
+        }
+        expandedColumnID = nil
+        appConfig.columns = columns
+        if isWindowFittingEnabled {
+            // Give the new layout a moment to render and report its width before fitting to it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                fitWindowRequestToken += 1
+            }
+        }
     }
 
     // When columnWidth isn't set, column width is derived from the window's own width
@@ -129,9 +149,55 @@ struct ContentView: View {
         return indices
     }
 
+    /// Names the column and the account it uses, so similar-looking columns can be told apart.
+    private func columnTitleBar(column: AppConfig.Column) -> some View {
+        let title: String = {
+            guard column.type == .custom, let url = column.url.flatMap({ URL(string: $0) }) else {
+                return column.type.displayName
+            }
+            let path = url.path()
+            return path.isEmpty || path == "/" ? (url.host() ?? url.absoluteString) : path
+        }()
+        let handle: String? = {
+            if let profileUrl = profileUrls[column.accountKey] {
+                return "@" + profileUrl.lastPathComponent
+            }
+            return column.accountKey.isEmpty ? nil : column.account
+        }()
+        return HStack(spacing: 6) {
+            Image(systemName: column.type.systemImage)
+            Text(title)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            if let handle {
+                Text(handle)
+                    .lineLimit(1)
+            }
+        }
+        .font(.system(size: 12))
+        .foregroundColor(Self.textColor(for: backgroundColor))
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Self.borderColor(for: backgroundColor)),
+            alignment: .bottom
+        )
+        .overlay(
+            Rectangle()
+                .frame(width: 1)
+                .foregroundColor(Self.borderColor(for: backgroundColor)),
+            alignment: .trailing
+        )
+        .clipped()
+    }
+
     @ViewBuilder
     private func makeColumn(
-        column: AppConfig.Column, columnIndex: Int, isLeftMostXColumn: Bool, showsSideHeader: Bool,
+        column: AppConfig.Column, isLeftMostXColumn: Bool, showsSideHeader: Bool,
         profileUrl: URL?, columnWidth: CGFloat
     )
         -> some View
@@ -140,9 +206,12 @@ struct ContentView: View {
         let accountKey = column.accountKey
 
         let baseConfiguration: [WebViewConfigurations.OnLoadScript] = {
-            var scripts: [WebViewConfigurations.OnLoadScript] = [.global, .detectMediaOverlay(columnIndex: columnIndex)]
+            var scripts: [WebViewConfigurations.OnLoadScript] = [.global, .detectMediaOverlay(columnID: column.id.uuidString)]
             if isLeftMostXColumn {
                 scripts.append(.findThemeColor)
+            }
+            if column.isXColumn {
+                scripts.append(.hideBottomBar)
             }
             if column.isXColumn && !showsSideHeader {
                 scripts.append(contentsOf: [.hideSideHeader, .hidePostArea])
@@ -197,6 +266,16 @@ struct ContentView: View {
                         onLoadScripts: baseConfiguration, accountKey: accountKey)
                 ).frame(width: width)
             }
+        case .search:
+            WebView(
+                isLoading: $isLoading, url: .constant(Self.searchUrl), alertMessage: $alertMessage,
+                messageFromWebView: $webViewMessage,
+                scriptExecutionRequest: scriptExecutionRequest,
+                scriptExecutionToken: scriptExecutionToken,
+                refreshSwitch: refreshSwitch,
+                configuration: WebViewConfigurations.makeConfiguration(
+                    onLoadScripts: baseConfiguration, accountKey: accountKey)
+            ).frame(width: width)
         case .custom:
             if let urlString = column.url, let url = URL(string: urlString) {
                 WebView(
@@ -308,25 +387,31 @@ struct ContentView: View {
                                 ScrollView(.horizontal) {
                                     VStack(alignment: .leading, spacing: 0) {
                                         HStack(spacing: 0) {
-                                            ForEach(appConfig.columns.indices, id: \.self) { index in
-                                                let column = appConfig.columns[index]
+                                            ForEach(Array(appConfig.columns.enumerated()), id: \.element.id) { index, column in
                                                 let isLeftMostXColumn =
                                                     index == (appConfig.columns.firstIndex { $0.isXColumn } ?? -1)
                                                 let showsSideHeader = sideHeaderColumnIndices.contains(index)
-                                                let isExpanded = expandedColumnIndex == index
-                                                let isHidden = expandedColumnIndex != nil && !isExpanded
+                                                let isExpanded = expandedColumnID == column.id
+                                                let isHidden = expandedColumnID != nil && !isExpanded
                                                 let effectiveWidth: CGFloat = isExpanded
                                                     ? (showsSideHeader ? geometry.size.width - Self.sideHeaderWidth : geometry.size.width)
                                                     : dynamicColumnWidth
+                                                let barWidth = isHidden ? 0 : (showsSideHeader ? effectiveWidth + Self.sideHeaderWidth : effectiveWidth)
+                                                VStack(spacing: 0) {
+                                                columnTitleBar(column: column)
+                                                    .frame(width: barWidth)
                                                 makeColumn(
                                                     column: column,
-                                                    columnIndex: index,
                                                     isLeftMostXColumn: isLeftMostXColumn,
                                                     showsSideHeader: showsSideHeader,
                                                     profileUrl: profileUrls[column.accountKey],
                                                     columnWidth: isHidden ? 0 : effectiveWidth
                                                 )
+                                                }
                                                 .opacity(isHidden ? 0 : 1)
+                                                // Its scripts are fixed when the web view is created, so rebuild it
+                                                // if adding or removing columns changes which role it plays.
+                                                .id("\(column.id)|\(isLeftMostXColumn)|\(showsSideHeader)")
                                             }
                                         }
                                     }
@@ -365,6 +450,14 @@ struct ContentView: View {
                                             }
                                             UpdateButton()
                                         }
+                                        Button {
+                                            isShowingColumnsSheet = true
+                                        } label: {
+                                            Label("Columns", systemImage: "plus.rectangle.on.rectangle")
+                                                .foregroundColor(Self.textColor(for: backgroundColor))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Add, remove or reorder columns")
                                         AppearanceToggle(isOn: $isDarkMode) { }
                                             .disabled(isDarkModeUpdating)
                                             .onChange(of: isDarkMode) { newValue in
@@ -438,6 +531,9 @@ struct ContentView: View {
 
                     }
                     .background(backgroundColor)
+                    .sheet(isPresented: $isShowingColumnsSheet) {
+                        ColumnsSheet(columns: appConfig.columns, onSave: applyColumns)
+                    }
                     .background {
                         if isWindowFittingEnabled {
                             WindowWidthFitter(
@@ -485,9 +581,9 @@ struct ContentView: View {
                                 isDarkModeUpdating = false
                             case .mediaOverlay:
                                 if message.body == "close" {
-                                    expandedColumnIndex = nil
-                                } else if let index = Int(message.body) {
-                                    expandedColumnIndex = index
+                                    expandedColumnID = nil
+                                } else if let id = UUID(uuidString: message.body) {
+                                    expandedColumnID = id
                                 }
                             }
                         }

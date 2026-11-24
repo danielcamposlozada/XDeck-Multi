@@ -39,7 +39,7 @@ MVVM pattern with JavaScript injection for web content manipulation.
 
 ### Configuration
 
-User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `custom` (arbitrary URL).
+User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `search` (𝕏's Explore page, with its search box), `custom` (arbitrary URL). The **Columns** button in the bottom toolbar (`ColumnsSheet`) adds, removes and reorders columns and writes them back with `AppConfig.saveColumns`, keeping the file's other keys.
 
 ## public/
 

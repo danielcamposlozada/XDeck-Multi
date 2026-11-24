@@ -26,6 +26,7 @@
 		5B90B8D52A8E7A2F00185EAA /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B90B8D42A8E7A2F00185EAA /* LoginView.swift */; };
 		5BC7F4812C17EA42002A37C2 /* UpdateButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC7F4802C17EA42002A37C2 /* UpdateButton.swift */; };
 		5BD50E852C14BBFE004D4A7E /* HideAdsToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD50E842C14BBFE004D4A7E /* HideAdsToggle.swift */; };
+		5BC0A1E12F00000000C0FFEE /* ColumnsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC0A1E02F00000000C0FFEE /* ColumnsSheet.swift */; };
 		C8296B1C2F8A811D00AF6E99 /* XDeck.icon in Resources */ = {isa = PBXBuildFile; fileRef = C8296B1B2F8A811D00AF6E99 /* XDeck.icon */; };
 /* End PBXBuildFile section */
 
@@ -51,6 +52,7 @@
 		5B90B8D42A8E7A2F00185EAA /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		5BC7F4802C17EA42002A37C2 /* UpdateButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateButton.swift; sourceTree = "<group>"; };
 		5BD50E842C14BBFE004D4A7E /* HideAdsToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HideAdsToggle.swift; sourceTree = "<group>"; };
+		5BC0A1E02F00000000C0FFEE /* ColumnsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnsSheet.swift; sourceTree = "<group>"; };
 		C8296B1B2F8A811D00AF6E99 /* XDeck.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = XDeck.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -73,6 +75,7 @@
 				5BC7F4802C17EA42002A37C2 /* UpdateButton.swift */,
 				5B1CC26E2A95944A00DF7D83 /* AppearanceToggle.swift */,
 				5BD50E842C14BBFE004D4A7E /* HideAdsToggle.swift */,
+				5BC0A1E02F00000000C0FFEE /* ColumnsSheet.swift */,
 				5B90B8D42A8E7A2F00185EAA /* LoginView.swift */,
 				5B90B8D12A8E6E6400185EAA /* WebView.swift */,
 			);
@@ -234,6 +237,7 @@
 				5BC7F4812C17EA42002A37C2 /* UpdateButton.swift in Sources */,
 				5B0DC3542A8FC79400268684 /* WebViewConfigurations.swift in Sources */,
 				5BD50E852C14BBFE004D4A7E /* HideAdsToggle.swift in Sources */,
+				5BC0A1E12F00000000C0FFEE /* ColumnsSheet.swift in Sources */,
 				5B5F42252AAA368E0031658B /* AppConfig.swift in Sources */,
 				5B1CC26B2A95026F00DF7D83 /* GitHubIcon.swift in Sources */,
 				5B1CC2712A95968E00DF7D83 /* SunIcon.swift in Sources */,
