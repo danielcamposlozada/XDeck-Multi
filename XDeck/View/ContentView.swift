@@ -203,98 +203,48 @@ struct ContentView: View {
         -> some View
     {
         let width = showsSideHeader ? columnWidth + Self.sideHeaderWidth : columnWidth
-        let accountKey = column.accountKey
-
-        let baseConfiguration: [WebViewConfigurations.OnLoadScript] = {
-            var scripts: [WebViewConfigurations.OnLoadScript] = [.global, .detectMediaOverlay(columnID: column.id.uuidString)]
-            if isLeftMostXColumn {
-                scripts.append(.findThemeColor)
+        let (url, typeScripts): (Binding<URL>?, [WebViewConfigurations.OnLoadScript]) = {
+            switch column.type {
+            case .forYou: return ($homeUrl, [.clickForYouTab])
+            case .following: return ($homeUrl, [.clickFollowingTab])
+            case .notifications: return ($notificationsUrl, [])
+            // Shows nothing until the account's profile URL is known.
+            case .profile: return (profileUrl.map { .constant($0) }, [])
+            case .search: return (.constant(Self.searchUrl), [])
+            case .custom: return (column.url.flatMap { URL(string: $0) }.map { .constant($0) }, [])
             }
-            if column.isXColumn {
-                scripts.append(.hideBottomBar)
-            }
-            if column.isXColumn && !showsSideHeader {
-                scripts.append(contentsOf: [.hideSideHeader, .hidePostArea])
-            }
-            if hideAds {
-                scripts.append(.hideAds)
-            }
-            return scripts
         }()
 
-        switch column.type {
-        case .forYou:
+        if let url {
             WebView(
-                isLoading: $isLoading, url: $homeUrl, alertMessage: $alertMessage,
+                isLoading: $isLoading, url: url, alertMessage: $alertMessage,
                 messageFromWebView: $webViewMessage,
                 scriptExecutionRequest: scriptExecutionRequest,
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
-                configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration + [.clickForYouTab], accountKey: accountKey)
+                makeConfiguration: { [hideAds] in
+                    var scripts: [WebViewConfigurations.OnLoadScript] = [
+                        .global, .detectMediaOverlay(columnID: column.id.uuidString),
+                    ]
+                    if isLeftMostXColumn {
+                        scripts.append(.findThemeColor)
+                    }
+                    if column.isXColumn {
+                        scripts.append(.hideBottomBar)
+                        if !showsSideHeader {
+                            scripts.append(contentsOf: [.hideSideHeader, .hidePostArea])
+                        }
+                    }
+                    if hideAds {
+                        scripts.append(.hideAds)
+                    }
+                    return WebViewConfigurations.makeConfiguration(
+                        onLoadScripts: scripts + typeScripts, accountKey: column.accountKey)
+                }
             ).frame(width: width)
-        case .following:
-            WebView(
-                isLoading: $isLoading, url: $homeUrl, alertMessage: $alertMessage,
-                messageFromWebView: $webViewMessage,
-                scriptExecutionRequest: scriptExecutionRequest,
-                scriptExecutionToken: scriptExecutionToken,
-                refreshSwitch: refreshSwitch,
-                configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration + [.clickFollowingTab], accountKey: accountKey)
-            ).frame(width: width)
-        case .notifications:
-            WebView(
-                isLoading: $isLoading, url: $notificationsUrl,
-                alertMessage: $alertMessage,
-                messageFromWebView: $webViewMessage,
-                scriptExecutionRequest: scriptExecutionRequest,
-                scriptExecutionToken: scriptExecutionToken,
-                refreshSwitch: refreshSwitch,
-                configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration, accountKey: accountKey)
-            ).frame(width: width)
-        case .profile:
-            if let profileUrl {
-                WebView(
-                    isLoading: $isLoading, url: .constant(profileUrl), alertMessage: $alertMessage,
-                    messageFromWebView: $webViewMessage,
-                    scriptExecutionRequest: column.isXColumn ? scriptExecutionRequest : nil,
-                    scriptExecutionToken: column.isXColumn ? scriptExecutionToken : 0,
-                    refreshSwitch: refreshSwitch,
-                    configuration: WebViewConfigurations.makeConfiguration(
-                        onLoadScripts: baseConfiguration, accountKey: accountKey)
-                ).frame(width: width)
-            }
-        case .search:
-            WebView(
-                isLoading: $isLoading, url: .constant(Self.searchUrl), alertMessage: $alertMessage,
-                messageFromWebView: $webViewMessage,
-                scriptExecutionRequest: scriptExecutionRequest,
-                scriptExecutionToken: scriptExecutionToken,
-                refreshSwitch: refreshSwitch,
-                configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration, accountKey: accountKey)
-            ).frame(width: width)
-        case .custom:
-            if let urlString = column.url, let url = URL(string: urlString) {
-                WebView(
-                    isLoading: $isLoading, url: .constant(url), alertMessage: $alertMessage,
-                    messageFromWebView: $webViewMessage,
-                    scriptExecutionRequest: scriptExecutionRequest,
-                    scriptExecutionToken: scriptExecutionToken,
-                    refreshSwitch: refreshSwitch,
-                    configuration: WebViewConfigurations.makeConfiguration(
-                        onLoadScripts: baseConfiguration, accountKey: accountKey)
-                ).frame(width: width)
-            }
         }
-        EmptyView()
     }
 
-    lazy var leftMostXColumnIndex: Int? = {
-        return appConfig.columns.firstIndex { $0.isXColumn }
-    }()
 
     var body: some View {
         GeometryReader { geometry in

@@ -15,15 +15,14 @@ struct WebView: NSViewRepresentable {
 
     var scriptExecutionToken: Int = 0
     var refreshSwitch: Bool = false
-    var configuration: WKWebViewConfiguration? = nil
+    /// Builds the web view's configuration. Called once, when the web view is created, rather than
+    /// on every SwiftUI update: the configuration is only read at creation.
+    var makeConfiguration: (() -> WKWebViewConfiguration)? = nil
 
     func makeNSView(context: Context) -> WKWebView {
-        let webView: WKWebView
-        if let configuration = configuration {
-            webView = WKWebView(frame: .zero, configuration: configuration)
-        } else {
-            webView = WKWebView()
-        }
+        let configuration = makeConfiguration?() ?? WKWebViewConfiguration()
+        configuration.userContentController.add(context.coordinator, name: WebViewConfigurations.handlerName)
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         // Pretend Safari because 𝕏 bans the user agent of WebView
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
         webView.navigationDelegate = context.coordinator
@@ -52,6 +51,14 @@ struct WebView: NSViewRepresentable {
         }
     }
 
+    /// The content controller holds its message handler strongly, so a removed column's web view
+    /// and coordinator would never be freed without this.
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: WebViewConfigurations.handlerName)
+        webView.stopLoading()
+    }
+
     func makeCoordinator() -> Coordinator {
         return Coordinator(owner: self)
     }
@@ -66,18 +73,18 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     init(owner: WebView) {
         self.owner = owner
         self.lastUrl = owner.url
-        self.refreshSwitch = false
+        // Start from the current value, so a column added after a refresh doesn't reload right away.
+        self.refreshSwitch = owner.refreshSwitch
         self.lastHandledScriptToken = owner.scriptExecutionToken
         super.init()
-        owner.configuration?.userContentController.add(self, name: WebViewConfigurations.handlerName)
     }
 
     // MARK: WKNavigationDelegate
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        owner.isLoading = true
+        if !owner.isLoading { owner.isLoading = true }
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        owner.isLoading = false
+        if owner.isLoading { owner.isLoading = false }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if case .linkActivated = navigationAction.navigationType, let url = navigationAction.request.url {
@@ -110,8 +117,16 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
 
     // MARK: WKScriptMessageHandler
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == WebViewConfigurations.handlerName else { return }
-        print("[WKScriptMessage] \(message.body)")
-        owner.messageFromWebView = message.body as? String
+        guard message.name == WebViewConfigurations.handlerName,
+              let body = message.body as? String else { return }
+        // 𝕏 writes to the console constantly. Forwarding those messages would redraw every column
+        // each time, so they only go to the debug log.
+        if body.hasPrefix(#"{"type":"debug""#) {
+            #if DEBUG
+            print("[WKScriptMessage] \(body)")
+            #endif
+            return
+        }
+        owner.messageFromWebView = body
     }
 }
