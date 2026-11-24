@@ -8,7 +8,7 @@
   <a href="https://github.com/danielcamposlozada/XDeck-Multi/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/danielcamposlozada/XDeck-Multi/ci.yml?style=flat-square&label=CI" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/danielcamposlozada/XDeck-Multi?style=flat-square" alt="Licencia"></a>
   <br><br>
-  <img src=".github/assets/hero-dark.png" width="900" alt="XDeck Multi con Para ti, Búsqueda, una lista y un perfil lado a lado">
+  <img src=".github/assets/hero-dark.png" width="900" alt="XDeck Multi en modo oscuro con cuatro columnas lado a lado: posts de NASA, la Estación Espacial Internacional, GitHub y Figma">
 </div>
 
 > [!NOTE]
@@ -45,8 +45,8 @@
 #### Agregar y reordenar columnas
 ![La ventana Columns, con la lista de columnas y el formulario para agregar una](.github/assets/columns-sheet.png)
 
-#### Búsqueda al lado de tu timeline
-![Una columna de búsqueda con su buscador, al lado del timeline Para ti](.github/assets/search.png)
+#### Búsquedas como columnas
+![Una columna de búsqueda con su buscador, al lado de otra columna](.github/assets/search.png)
 
 ## Instalación
 
