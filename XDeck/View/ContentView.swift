@@ -155,6 +155,12 @@ struct ContentView: View {
             guard column.type == .custom, let url = column.url.flatMap({ URL(string: $0) }) else {
                 return column.type.displayName
             }
+            // A search shows its query, not the "/search" path every search shares.
+            if url.path() == "/search",
+               let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                   .queryItems?.first(where: { $0.name == "q" })?.value, !query.isEmpty {
+                return query
+            }
             let path = url.path()
             return path.isEmpty || path == "/" ? (url.host() ?? url.absoluteString) : path
         }()
