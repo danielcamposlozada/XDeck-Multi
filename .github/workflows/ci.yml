@@ -1,0 +1,94 @@
+name: CI
+
+# Checks both editions on every push and pull request:
+# macOS (Swift, built with Xcode 26) and Windows + Linux (Electron, in desktop/).
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS edition
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      # XDeck/XDeck.icon (Icon Composer format) only compiles with Xcode 26.
+      - name: Select Xcode 26
+        run: |
+          if [ -d "/Applications/Xcode_26.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+          fi
+          xcodebuild -version
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild build \
+            -project XDeck.xcodeproj \
+            -scheme XDeck \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
+
+  desktop:
+    name: Windows + Linux edition (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check, lint and unit tests
+        run: npm run check
+
+      # Ubuntu runners block the unprivileged user namespaces Chromium's sandbox uses.
+      - name: Allow Chromium's sandbox (Linux)
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run smoke
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: npm run smoke
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: npm run dist:linux
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: xdeck-multi-${{ runner.os }}
+          path: |
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 14

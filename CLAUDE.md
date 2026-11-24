@@ -1,8 +1,5 @@
 # CLAUDE.md
 
-> [!IMPORTANT]
-> **Trabajo en curso: XDeck Multi (fork multicuenta, dos ediciones: macOS nativa en Swift y Windows + Linux con Electron + TypeScript).** Antes de hacer nada, leé `.claude/TRASPASO.md` (contexto, decisiones, estado y plan) y seguí la skill `.claude/skills/repo-github-profesional/SKILL.md`. Se trabaja con dos Claude Code (Mac y Linux Mint): ver la sección 10 del traspaso para saber qué le toca a cada máquina. Hablale a Daniel en español. Este bloque es temporal: se saca antes de publicar.
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
