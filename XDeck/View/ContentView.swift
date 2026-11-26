@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UniformTypeIdentifiers
 
 private struct ContentWidthPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -67,6 +68,9 @@ struct ContentView: View {
     @State var loginViewMessage: String? = nil
     @State var expandedColumnID: UUID? = nil
     @State var isShowingColumnsSheet = false
+    /// The column being dragged by its title bar, and the one it's hovering over.
+    @State var draggingColumnID: UUID? = nil
+    @State var dropTargetColumnID: UUID? = nil
 
     @State var measuredContentWidth: CGFloat = 0
     @State var hasFitWindowToContent = false
@@ -122,6 +126,24 @@ struct ContentView: View {
                 fitWindowRequestToken += 1
             }
         }
+    }
+
+    /// Moves a column dragged by its title bar onto another one's place and saves the new order.
+    private func moveColumn(_ sourceID: UUID, onto targetID: UUID) {
+        var columns = appConfig.columns
+        guard sourceID != targetID,
+              let from = columns.firstIndex(where: { $0.id == sourceID }),
+              let to = columns.firstIndex(where: { $0.id == targetID }) else { return }
+        columns.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        applyColumns(columns)
+    }
+
+    /// Where the dragged column would land: before the target when moving left, after it when moving right.
+    private func dropIndicatorAlignment(for column: AppConfig.Column) -> Alignment? {
+        guard dropTargetColumnID == column.id, let draggingColumnID, draggingColumnID != column.id,
+              let from = appConfig.columns.firstIndex(where: { $0.id == draggingColumnID }),
+              let to = appConfig.columns.firstIndex(where: { $0.id == column.id }) else { return nil }
+        return to > from ? .trailing : .leading
     }
 
     // When columnWidth isn't set, column width is derived from the window's own width
@@ -199,6 +221,26 @@ struct ContentView: View {
             alignment: .trailing
         )
         .clipped()
+        .overlay {
+            if let alignment = dropIndicatorAlignment(for: column) {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: 3)
+                    .frame(maxWidth: .infinity, alignment: alignment)
+            }
+        }
+        .opacity(draggingColumnID == column.id && dropTargetColumnID != nil ? 0.5 : 1)
+        .contentShape(Rectangle())
+        .help("Drag to move this column")
+        .onDrag {
+            draggingColumnID = column.id
+            return NSItemProvider(object: column.id.uuidString as NSString)
+        }
+        .onDrop(
+            of: [UTType.plainText],
+            delegate: ColumnDropDelegate(
+                targetID: column.id, draggingID: $draggingColumnID,
+                dropTargetID: $dropTargetColumnID, onMove: moveColumn))
     }
 
     @ViewBuilder
@@ -548,6 +590,42 @@ struct ContentView: View {
                         isShowingAlert = message != nil
                     }
                 } // End of GeometryReader
+    }
+}
+
+/// Accepts a column dragged by its title bar onto another column's title bar.
+private struct ColumnDropDelegate: DropDelegate {
+    let targetID: UUID
+    @Binding var draggingID: UUID?
+    @Binding var dropTargetID: UUID?
+    let onMove: (UUID, UUID) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.plainText])
+    }
+
+    func dropEntered(info: DropInfo) {
+        dropTargetID = targetID
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTargetID == targetID { dropTargetID = nil }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        dropTargetID = nil
+        // Reads the dragged column's id from the drop itself, so text dragged in from elsewhere does nothing.
+        guard let provider = info.itemProviders(for: [UTType.plainText]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let text = object as? String, let sourceID = UUID(uuidString: text) else { return }
+            DispatchQueue.main.async { onMove(sourceID, targetID) }
+        }
+        return true
     }
 }
 

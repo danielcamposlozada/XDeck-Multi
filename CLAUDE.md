@@ -36,7 +36,7 @@ MVVM pattern with JavaScript injection for web content manipulation.
 
 ### Configuration
 
-User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `search` (𝕏's Explore page, with its search box), `custom` (arbitrary URL). The **Columns** button in the bottom toolbar (`ColumnsSheet`) adds, removes and reorders columns and writes them back with `AppConfig.saveColumns`, keeping the file's other keys.
+User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `search` (𝕏's Explore page, with its search box), `custom` (arbitrary URL). The **Columns** button in the bottom toolbar (`ColumnsSheet`) adds, removes and reorders columns and writes them back with `AppConfig.saveColumns`, keeping the file's other keys. Columns can also be dragged by their title bar onto another column's title bar (`ColumnDropDelegate` in `ContentView.swift`); drops are only accepted on title bars because the WKWebViews take text drags themselves.
 
 ## public/
 

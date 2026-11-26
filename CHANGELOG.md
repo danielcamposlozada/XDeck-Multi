@@ -2,6 +2,11 @@
 
 All notable changes to XDeck Multi are documented here. XDeck Multi is a fork of [XDeck](https://github.com/morishin/XDeck) 3.3.
 
+## 1.1.0
+
+### Added
+- Drag a column by its title bar and drop it on another column's title bar to move it, right in the main window (macOS). A line shows where it will land, and the new order is saved to `settings.json`.
+
 ## 1.0.0
 
 ### Added

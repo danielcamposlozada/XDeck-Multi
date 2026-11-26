@@ -25,6 +25,7 @@
 ### Columns
 - For You, Following, Notifications, Profile, Search, and any 𝕏 page you want (a list, a search, a community).
 - **Columns** button: add, remove and drag to reorder columns. Changes show up right away (macOS).
+- Drag a column by its title bar to move it right in the window (macOS).
 - A title bar on each column with its type and account (macOS).
 - Opening a photo or video expands that column to the full window.
 

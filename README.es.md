@@ -25,6 +25,7 @@
 ### Columnas
 - Para ti, Siguiendo, Notificaciones, Perfil, Búsqueda y cualquier página de 𝕏 (una lista, una búsqueda, una comunidad).
 - Botón **Columns**: agregá, quitá y reordená columnas arrastrándolas. Los cambios se ven al instante (macOS).
+- Arrastrá una columna por su barra de título para moverla directo en la ventana (macOS).
 - Una barra de título en cada columna con su tipo y su cuenta (macOS).
 - Al abrir una foto o un video, esa columna ocupa toda la ventana.
 
