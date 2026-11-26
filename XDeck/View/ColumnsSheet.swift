@@ -24,6 +24,35 @@ extension AppConfig.Column.ColumnType {
     }
 }
 
+extension AppConfig.Column {
+    /// The query of a column that shows 𝕏 search results, if it has one.
+    var searchQuery: String? {
+        guard type == .custom, let url = url.flatMap({ URL(string: $0) }), url.path() == "/search",
+              let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                  .queryItems?.first(where: { $0.name == "q" })?.value,
+              !query.isEmpty else { return nil }
+        return query
+    }
+
+    /// A short name for the column: its search query, a custom URL's path, or the type's name.
+    var displayTitle: String {
+        if let searchQuery { return searchQuery }
+        guard type == .custom, let url = url.flatMap({ URL(string: $0) }) else { return type.displayName }
+        let path = url.path()
+        return path.isEmpty || path == "/" ? (url.host() ?? url.absoluteString) : path
+    }
+
+    var displaySystemImage: String { searchQuery != nil ? "magnifyingglass" : type.systemImage }
+
+    /// A column with 𝕏's latest results for a search.
+    static func search(_ query: String, account: String?) -> AppConfig.Column? {
+        var components = URLComponents(string: "https://x.com/search")!
+        components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "f", value: "live")]
+        guard let url = components.url else { return nil }
+        return AppConfig.Column(type: .custom, url: url.absoluteString, account: account)
+    }
+}
+
 /// Lets the user add, remove and reorder columns without editing settings.json by hand.
 /// Works on a copy of the columns; nothing changes until Save.
 struct ColumnsSheet: View {
@@ -35,6 +64,7 @@ struct ColumnsSheet: View {
     // New column form
     @State private var newType: AppConfig.Column.ColumnType = .following
     @State private var newUrl: String = ""
+    @State private var newSearchQuery: String = ""
     @State private var newAccountChoice: String = Self.defaultAccountTag
     @State private var newAccountName: String = ""
 
@@ -105,7 +135,7 @@ struct ColumnsSheet: View {
                         .foregroundColor(.secondary)
                 }
             }
-            Text("Drag to reorder.")
+            Text("Drag to reorder. In the main window, you can also drag a column by its title bar.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -121,6 +151,12 @@ struct ColumnsSheet: View {
                 }
                 if newType == .custom {
                     TextField("URL", text: $newUrl, prompt: Text("https://x.com/i/lists/123456789"))
+                }
+                if newType == .search {
+                    TextField("Search for", text: $newSearchQuery, prompt: Text("from:NASA, #design, a topic…"))
+                    Text("Shows the latest posts. Leave it empty for 𝕏's Explore page.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 Picker("Account", selection: $newAccountChoice) {
                     Text("Default").tag(Self.defaultAccountTag)
@@ -165,11 +201,17 @@ struct ColumnsSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
                 .foregroundColor(.secondary)
-            Image(systemName: column.type.systemImage)
+            Image(systemName: column.displaySystemImage)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
-                Text(column.type.displayName)
-                if column.type == .custom, let url = column.url {
+                Text(column.displayTitle)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if column.searchQuery != nil {
+                    Text("Search · Latest")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else if column.type == .custom, let url = column.url {
                     Text(url)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -193,15 +235,22 @@ struct ColumnsSheet: View {
             }
             .buttonStyle(.plain)
             .help("Remove column")
+            .accessibilityLabel("Remove \(column.displayTitle)")
         }
         .padding(.vertical, 2)
     }
 
     private func addColumn() {
         let account = newColumnAccount
-        let url = newType == .custom ? normalizedNewUrl?.absoluteString : nil
-        columns.append(AppConfig.Column(type: newType, url: url, account: account))
+        let query = newSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if newType == .search, !query.isEmpty, let column = AppConfig.Column.search(query, account: account) {
+            columns.append(column)
+        } else {
+            let url = newType == .custom ? normalizedNewUrl?.absoluteString : nil
+            columns.append(AppConfig.Column(type: newType, url: url, account: account))
+        }
         newUrl = ""
+        newSearchQuery = ""
         if newAccountChoice == Self.newAccountTag, let account {
             // The new account now appears in the list; keep it selected for the next column.
             newAccountChoice = existingAccounts.first { $0.lowercased() == account.lowercased() } ?? account

@@ -24,21 +24,22 @@
 
 ### Columns
 - For You, Following, Notifications, Profile, Search, and any 𝕏 page you want (a list, a search, a community).
+- Search columns: type a query like `from:NASA` when adding a column and it shows the latest posts (macOS).
 - **Columns** button: add, remove and drag to reorder columns. Changes show up right away (macOS).
-- Drag a column by its title bar to move it right in the window (macOS).
+- Drag a column by its title bar to move it right in the window: the whole column follows the cursor and the others slide out of its way. Right-click a title bar to move it one place over (macOS).
 - A title bar on each column with its type and account (macOS).
 - Opening a photo or video expands that column to the full window.
 
 ### Multiple accounts
 - Each column can use a different 𝕏 account.
 - Every account keeps its own isolated, persistent session.
-- Guided login, one account at a time, with a "Skip for now" option.
+- Guided login, one account at a time, showing which account comes next, with a "Skip for Now" option.
 - The first column of each account keeps the Post button, so you always post from the right account.
 
 ### Reading
 - Hide ads and promoted posts with one switch.
 - Light and dark mode.
-- Zoom in and out of every column at once, and refresh them all.
+- Zoom in and out of every column at once, and refresh them all, from the bottom toolbar or the keyboard.
 - 𝕏's mobile navigation bar is hidden, so narrow columns show only posts.
 
 ## Gallery

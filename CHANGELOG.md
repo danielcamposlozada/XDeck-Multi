@@ -2,6 +2,25 @@
 
 All notable changes to XDeck Multi are documented here. XDeck Multi is a fork of [XDeck](https://github.com/morishin/XDeck) 3.3.
 
+## 1.2.0
+
+### Added
+- Search columns from the Columns window: pick **Search**, type a query such as `from:NASA`, and the column shows the latest posts (macOS).
+- Right-click a column's title bar to **Move Left** or **Move Right**, also available to VoiceOver (macOS).
+- The sign-in screen shows which account comes next ("Account 2 of 3").
+- A clear error screen with an **Open Settings Folder** button when `settings.json` can't be read (macOS).
+
+### Changed
+- Dragging a column now moves the whole column: it follows the cursor, the others slide out of its way, and the slot it will land in stays marked. No column reloads until the drop. Honors **Reduce motion** (macOS).
+- Redesigned bottom toolbar: real buttons with icons and tooltips for zoom, refresh, fit and settings instead of shortcut labels, the zoom level as a percentage (click to reset), and grouped controls (macOS).
+- Zoom moves in 10% steps between 50% and 250%.
+- Search columns are named after their query, with a magnifying glass, in the title bars and the Columns window (macOS).
+- The Hide Ads and dark mode switches respond to clicks on their label too and work with VoiceOver (macOS).
+- Clearer wording in the settings prompt.
+
+### Fixed
+- macOS's window tab bar no longer takes space above the columns.
+
 ## 1.1.0
 
 ### Added

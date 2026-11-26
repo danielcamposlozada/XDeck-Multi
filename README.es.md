@@ -24,21 +24,22 @@
 
 ### Columnas
 - Para ti, Siguiendo, Notificaciones, Perfil, Búsqueda y cualquier página de 𝕏 (una lista, una búsqueda, una comunidad).
+- Columnas de búsqueda: escribí algo como `from:NASA` al agregar una columna y muestra los posts más recientes (macOS).
 - Botón **Columns**: agregá, quitá y reordená columnas arrastrándolas. Los cambios se ven al instante (macOS).
-- Arrastrá una columna por su barra de título para moverla directo en la ventana (macOS).
+- Arrastrá una columna por su barra de título para moverla directo en la ventana: la columna entera sigue al cursor y las demás se corren. Con clic derecho en la barra de título la movés un lugar (macOS).
 - Una barra de título en cada columna con su tipo y su cuenta (macOS).
 - Al abrir una foto o un video, esa columna ocupa toda la ventana.
 
 ### Varias cuentas
 - Cada columna puede usar una cuenta de 𝕏 distinta.
 - Cada cuenta tiene su propia sesión, aislada y guardada.
-- Inicio de sesión guiado, de a una cuenta, con la opción "Skip for now" para dejarla para después.
+- Inicio de sesión guiado, de a una cuenta, que muestra cuál sigue, con la opción "Skip for Now" para dejarla para después.
 - La primera columna de cada cuenta conserva el botón para postear, así siempre publicás desde la cuenta correcta.
 
 ### Lectura
 - Ocultá anuncios y posts promocionados con un interruptor.
 - Modo claro y oscuro.
-- Zoom y recarga de todas las columnas a la vez.
+- Zoom y recarga de todas las columnas a la vez, desde la barra de abajo o el teclado.
 - La barra de navegación de celular de 𝕏 está oculta, así las columnas angostas muestran solo posts.
 
 ## Galería

@@ -34,17 +34,24 @@ struct HideAdsToggleStyle: ToggleStyle {
                 .foregroundColor(
                     configuration.isOn ? Color.accentColor : Color(hex: "#BCC9D2")
                 )
-                .onHover { inside in
-                    if inside {
-                        NSCursor.pointingHand.push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-                .onTapGesture(perform: {
-                    configuration.isOn.toggle()
-                })
 
+        }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture {
+            configuration.isOn.toggle()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            configuration.isOn.toggle()
         }
     }
 

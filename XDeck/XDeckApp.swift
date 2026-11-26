@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // unreliable. Clearing it before the window is created keeps the initial size
     // deterministic and driven by the current config on every launch.
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // The deck is one window; macOS's tab bar would only take space above the columns.
+        NSWindow.allowsAutomaticWindowTabbing = false
         let defaults = UserDefaults.standard
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("NSWindow Frame ") {
             defaults.removeObject(forKey: key)
@@ -29,9 +31,7 @@ struct XDeckApp: App {
             if let appConfig {
                 ContentView(appConfig: appConfig)
             } else {
-                VStack(alignment: .center) {
-                    Text("Error: Failed to load config file")
-                }
+                ConfigErrorView()
             }
         }
         .windowStyle(.hiddenTitleBar)
@@ -40,5 +40,28 @@ struct XDeckApp: App {
         // it's known, since the exact fit can't be computed in advance (WebView/scrollbar
         // rendering introduces small, hard-to-predict width differences).
         .defaultSize(width: AppConfig.defaultWindowWidth, height: AppConfig.defaultWindowHeight)
+    }
+}
+
+/// Shown when settings.json can't be read, with a way to go fix it.
+struct ConfigErrorView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundColor(.orange)
+            Text("Couldn't load settings.json")
+                .font(.title2.bold())
+            Text("Check the file for a typo, or delete it and restart XDeck Multi to start over with the default columns.")
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: 380)
+            Button("Open Settings Folder") {
+                NSWorkspace.shared.open(AppConfig.configDirectoryUrl)
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -1,6 +1,5 @@
 import SwiftUI
 import WebKit
-import UniformTypeIdentifiers
 
 private struct ContentWidthPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -68,9 +67,15 @@ struct ContentView: View {
     @State var loginViewMessage: String? = nil
     @State var expandedColumnID: UUID? = nil
     @State var isShowingColumnsSheet = false
-    /// The column being dragged by its title bar, and the one it's hovering over.
+    /// The column being dragged by its title bar. While it moves, the others slide out of its way.
     @State var draggingColumnID: UUID? = nil
-    @State var dropTargetColumnID: UUID? = nil
+    /// How far the dragged column sits from its current slot, so it stays under the cursor.
+    @State var dragOffset: CGFloat = 0
+    /// Width of the slots the dragged column has passed, subtracted from the cursor's travel.
+    @State var dragShift: CGFloat = 0
+    /// The column order when the drag began. Each column's role (side navigation, theme detection)
+    /// comes from it until the drop, so no web view reloads while the user is still moving things.
+    @State var columnsAtDragStart: [AppConfig.Column]? = nil
 
     @State var measuredContentWidth: CGFloat = 0
     @State var hasFitWindowToContent = false
@@ -128,22 +133,93 @@ struct ContentView: View {
         }
     }
 
-    /// Moves a column dragged by its title bar onto another one's place and saves the new order.
-    private func moveColumn(_ sourceID: UUID, onto targetID: UUID) {
-        var columns = appConfig.columns
-        guard sourceID != targetID,
-              let from = columns.firstIndex(where: { $0.id == sourceID }),
-              let to = columns.firstIndex(where: { $0.id == targetID }) else { return }
-        columns.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        applyColumns(columns)
+    private static let zoomRange: ClosedRange<Double> = 0.5...2.5
+    private static let zoomStep: Double = 0.1
+
+    private func zoom(by delta: Double) {
+        let zoomed = ((pageZoom + delta) * 10).rounded() / 10
+        pageZoom = min(max(zoomed, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
     }
 
-    /// Where the dragged column would land: before the target when moving left, after it when moving right.
-    private func dropIndicatorAlignment(for column: AppConfig.Column) -> Alignment? {
-        guard dropTargetColumnID == column.id, let draggingColumnID, draggingColumnID != column.id,
-              let from = appConfig.columns.firstIndex(where: { $0.id == draggingColumnID }),
-              let to = appConfig.columns.firstIndex(where: { $0.id == column.id }) else { return nil }
-        return to > from ? .trailing : .leading
+    private func openSettingsFolder() {
+        NSWorkspace.shared.open(AppConfig.configDirectoryUrl)
+    }
+
+    private var toolbarDivider: some View {
+        Rectangle()
+            .fill(Self.borderColor(for: backgroundColor))
+            .frame(width: 1, height: 18)
+    }
+
+    /// Spring used when columns slide; none when the user asked macOS to reduce motion.
+    private var reorderAnimation: Animation? {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? nil : .spring(response: 0.3, dampingFraction: 0.82)
+    }
+
+    private func slotWidth(of column: AppConfig.Column, columnWidth: CGFloat) -> CGFloat {
+        sideHeaderColumnIDs.contains(column.id) ? columnWidth + Self.sideHeaderWidth : columnWidth
+    }
+
+    /// Moves the dragged column with the cursor and swaps it with a neighbor once it passes that
+    /// neighbor's middle, so the order changes live while the user drags.
+    private func updateColumnDrag(_ column: AppConfig.Column, translation: CGFloat, columnWidth: CGFloat) {
+        if draggingColumnID == nil {
+            // Not while a photo or video fills the window, nor while the last drop is still settling.
+            guard expandedColumnID == nil, columnsAtDragStart == nil else { return }
+            columnsAtDragStart = appConfig.columns
+            draggingColumnID = column.id
+            dragShift = 0
+        }
+        guard draggingColumnID == column.id else { return }
+        NSCursor.closedHand.set()
+
+        var offset = translation - dragShift
+        while let index = appConfig.columns.firstIndex(where: { $0.id == column.id }) {
+            let neighborIndex = offset > 0 ? index + 1 : index - 1
+            guard appConfig.columns.indices.contains(neighborIndex) else { break }
+            let neighborWidth = slotWidth(of: appConfig.columns[neighborIndex], columnWidth: columnWidth)
+            guard abs(offset) > neighborWidth / 2 else { break }
+            withAnimation(reorderAnimation) {
+                appConfig.columns.swapAt(index, neighborIndex)
+            }
+            dragShift += offset > 0 ? neighborWidth : -neighborWidth
+            offset = translation - dragShift
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+        dragOffset = offset
+    }
+
+    /// Lets the column settle into its slot, then saves the new order.
+    private func endColumnDrag(_ column: AppConfig.Column) {
+        guard draggingColumnID == column.id else { return }
+        let didChangeOrder = columnsAtDragStart?.map(\.id) != appConfig.columns.map(\.id)
+        withAnimation(reorderAnimation) {
+            draggingColumnID = nil
+            dragOffset = 0
+        }
+        dragShift = 0
+        NSCursor.openHand.set()
+        // Roles are recomputed after the settle animation, so a column that gains or loses the
+        // side navigation reloads once it has landed, not mid-flight.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            columnsAtDragStart = nil
+            if didChangeOrder {
+                applyColumns(appConfig.columns)
+            }
+        }
+    }
+
+    /// Keyboard, VoiceOver and right-click alternative to dragging: moves a column one place over.
+    private func moveColumn(_ column: AppConfig.Column, by delta: Int) {
+        guard draggingColumnID == nil,
+              let index = appConfig.columns.firstIndex(where: { $0.id == column.id }),
+              appConfig.columns.indices.contains(index + delta) else { return }
+        var columns = appConfig.columns
+        columns.swapAt(index, index + delta)
+        withAnimation(reorderAnimation) {
+            applyColumns(columns)
+        }
     }
 
     // When columnWidth isn't set, column width is derived from the window's own width
@@ -158,42 +234,43 @@ struct ContentView: View {
 
     private var hasMultipleAccounts: Bool { appConfig.accountKeys.count > 1 }
 
-    /// Indices of the columns that keep 𝕏's side navigation: the first 𝕏 column of each account,
+    /// The order that decides each column's role: frozen while a column is being dragged.
+    private var roleColumns: [AppConfig.Column] { columnsAtDragStart ?? appConfig.columns }
+
+    /// Columns that keep 𝕏's side navigation: the first 𝕏 column of each account,
     /// so every account has its own navigation, Post button and avatar.
-    private var sideHeaderColumnIndices: Set<Int> {
+    private var sideHeaderColumnIDs: Set<UUID> {
         var seenAccountKeys: Set<String> = []
-        var indices: Set<Int> = []
-        for (index, column) in appConfig.columns.enumerated() where column.isXColumn {
+        var ids: Set<UUID> = []
+        for column in roleColumns where column.isXColumn {
             if seenAccountKeys.insert(column.accountKey).inserted {
-                indices.insert(index)
+                ids.insert(column.id)
             }
         }
-        return indices
+        return ids
     }
 
+    /// The column whose page reports 𝕏's theme color.
+    private var leftMostXColumnID: UUID? { roleColumns.first { $0.isXColumn }?.id }
+
     /// Names the column and the account it uses, so similar-looking columns can be told apart.
-    private func columnTitleBar(column: AppConfig.Column) -> some View {
-        let title: String = {
-            guard column.type == .custom, let url = column.url.flatMap({ URL(string: $0) }) else {
-                return column.type.displayName
-            }
-            // A search shows its query, not the "/search" path every search shares.
-            if url.path() == "/search",
-               let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                   .queryItems?.first(where: { $0.name == "q" })?.value, !query.isEmpty {
-                return query
-            }
-            let path = url.path()
-            return path.isEmpty || path == "/" ? (url.host() ?? url.absoluteString) : path
-        }()
+    private func columnTitleBar(column: AppConfig.Column, columnWidth: CGFloat) -> some View {
+        let title = column.displayTitle
         let handle: String? = {
             if let profileUrl = profileUrls[column.accountKey] {
                 return "@" + profileUrl.lastPathComponent
             }
             return column.accountKey.isEmpty ? nil : column.account
         }()
+        let isDragging = draggingColumnID == column.id
+        let index = appConfig.columns.firstIndex { $0.id == column.id } ?? 0
+        let canMoveLeft = index > 0
+        let canMoveRight = index < appConfig.columns.count - 1
         return HStack(spacing: 6) {
-            Image(systemName: column.type.systemImage)
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10, weight: .semibold))
+                .opacity(isDragging ? 1 : 0.55)
+            Image(systemName: column.displaySystemImage)
             Text(title)
                 .fontWeight(.semibold)
                 .lineLimit(1)
@@ -220,27 +297,36 @@ struct ContentView: View {
                 .foregroundColor(Self.borderColor(for: backgroundColor)),
             alignment: .trailing
         )
+        .background(isDragging ? Color.accentColor.opacity(0.16) : Color.clear)
+        .foregroundColor(isDragging ? .accentColor : Self.textColor(for: backgroundColor))
         .clipped()
-        .overlay {
-            if let alignment = dropIndicatorAlignment(for: column) {
-                Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(width: 3)
-                    .frame(maxWidth: .infinity, alignment: alignment)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            guard draggingColumnID == nil else { return }
+            if inside {
+                NSCursor.openHand.push()
+            } else {
+                NSCursor.pop()
             }
         }
-        .opacity(draggingColumnID == column.id && dropTargetColumnID != nil ? 0.5 : 1)
-        .contentShape(Rectangle())
-        .help("Drag to move this column")
-        .onDrag {
-            draggingColumnID = column.id
-            return NSItemProvider(object: column.id.uuidString as NSString)
+        .gesture(
+            DragGesture(minimumDistance: 3, coordinateSpace: .global)
+                .onChanged { value in
+                    updateColumnDrag(column, translation: value.translation.width, columnWidth: columnWidth)
+                }
+                .onEnded { _ in endColumnDrag(column) }
+        )
+        .contextMenu {
+            Button("Move Left") { moveColumn(column, by: -1) }
+                .disabled(!canMoveLeft)
+            Button("Move Right") { moveColumn(column, by: 1) }
+                .disabled(!canMoveRight)
         }
-        .onDrop(
-            of: [UTType.plainText],
-            delegate: ColumnDropDelegate(
-                targetID: column.id, draggingID: $draggingColumnID,
-                dropTargetID: $dropTargetColumnID, onMove: moveColumn))
+        .help("Drag to move this column. Right-click to move it one place over.")
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Drag to move this column")
+        .accessibilityAction(named: "Move Left") { moveColumn(column, by: -1) }
+        .accessibilityAction(named: "Move Right") { moveColumn(column, by: 1) }
     }
 
     @ViewBuilder
@@ -299,8 +385,9 @@ struct ContentView: View {
                     // Determine the number of columns from the appConfig.
                     let columnCount = appConfig.columns.count
                     // Each account's first 𝕏 column keeps the side header, so there can be several.
-                    let sideHeaderColumnIndices = self.sideHeaderColumnIndices
-                    let sideHeaderCount = CGFloat(max(sideHeaderColumnIndices.count, 1))
+                    let sideHeaderColumnIDs = self.sideHeaderColumnIDs
+                    let leftMostXColumnID = self.leftMostXColumnID
+                    let sideHeaderCount = CGFloat(max(sideHeaderColumnIDs.count, 1))
 
                     // If a manual width is provided in the app config, use it;
                     // otherwise compute the base width dynamically.
@@ -325,13 +412,13 @@ struct ContentView: View {
                     ZStack {
                         // Update zoom buttons to change only the zoom factor.
                         Button("+") {
-                            pageZoom += 0.2
+                            zoom(by: Self.zoomStep)
                         }
                         .keyboardShortcut("+")
                         .opacity(0)
 
                         Button("-") {
-                            pageZoom -= 0.2
+                            zoom(by: -Self.zoomStep)
                         }
                         .keyboardShortcut("-")
                         .opacity(0)
@@ -363,12 +450,12 @@ struct ContentView: View {
                         .opacity(0)
                         .alert(isPresented: $isShowConfirmOpenPreference) {
                             Alert(
-                                title: Text("Do you open settings folder?"),
-                                message: Text("Please edit settings.json and restart app."),
+                                title: Text("Open the settings folder?"),
+                                message: Text("Edit settings.json, then restart XDeck Multi. To add, remove or move columns, use the Columns button instead."),
                                 primaryButton: .default(
                                     Text("Open Folder"),
                                     action: {
-                                        NSWorkspace.shared.open(AppConfig.configDirectoryUrl)
+                                        openSettingsFolder()
                                         isShowConfirmOpenPreference = false
                                     }),
                                 secondaryButton: .cancel(Text("Cancel"), action: {
@@ -385,26 +472,60 @@ struct ContentView: View {
                                 ScrollView(.horizontal) {
                                     VStack(alignment: .leading, spacing: 0) {
                                         HStack(spacing: 0) {
-                                            ForEach(Array(appConfig.columns.enumerated()), id: \.element.id) { index, column in
-                                                let isLeftMostXColumn =
-                                                    index == (appConfig.columns.firstIndex { $0.isXColumn } ?? -1)
-                                                let showsSideHeader = sideHeaderColumnIndices.contains(index)
+                                            ForEach(appConfig.columns) { column in
+                                                let isLeftMostXColumn = column.id == leftMostXColumnID
+                                                let showsSideHeader = sideHeaderColumnIDs.contains(column.id)
                                                 let isExpanded = expandedColumnID == column.id
                                                 let isHidden = expandedColumnID != nil && !isExpanded
+                                                let isDragging = draggingColumnID == column.id
                                                 let effectiveWidth: CGFloat = isExpanded
                                                     ? (showsSideHeader ? geometry.size.width - Self.sideHeaderWidth : geometry.size.width)
                                                     : dynamicColumnWidth
                                                 let barWidth = isHidden ? 0 : (showsSideHeader ? effectiveWidth + Self.sideHeaderWidth : effectiveWidth)
                                                 VStack(spacing: 0) {
-                                                columnTitleBar(column: column)
-                                                    .frame(width: barWidth)
-                                                makeColumn(
-                                                    column: column,
-                                                    isLeftMostXColumn: isLeftMostXColumn,
-                                                    showsSideHeader: showsSideHeader,
-                                                    profileUrl: profileUrls[column.accountKey],
-                                                    columnWidth: isHidden ? 0 : effectiveWidth
+                                                    columnTitleBar(column: column, columnWidth: dynamicColumnWidth)
+                                                        .frame(width: barWidth)
+                                                    makeColumn(
+                                                        column: column,
+                                                        isLeftMostXColumn: isLeftMostXColumn,
+                                                        showsSideHeader: showsSideHeader,
+                                                        profileUrl: profileUrls[column.accountKey],
+                                                        columnWidth: isHidden ? 0 : effectiveWidth
+                                                    )
+                                                }
+                                                // The lifted column: an accent outline and a shadow on an
+                                                // opaque backing, since the web view itself can't cast one.
+                                                .overlay {
+                                                    if isDragging {
+                                                        Rectangle().strokeBorder(Color.accentColor, lineWidth: 2)
+                                                    }
+                                                }
+                                                .background(
+                                                    Rectangle()
+                                                        .fill(backgroundColor)
+                                                        .shadow(
+                                                            color: .black.opacity(isDragging ? 0.35 : 0),
+                                                            radius: 18, x: 0, y: 8)
                                                 )
+                                                .offset(x: isDragging ? dragOffset : 0)
+                                                // The slot it will drop into stays marked under it.
+                                                .background {
+                                                    if isDragging {
+                                                        RoundedRectangle(cornerRadius: 10)
+                                                            .fill(Color.accentColor.opacity(0.08))
+                                                            .overlay(
+                                                                RoundedRectangle(cornerRadius: 10)
+                                                                    .strokeBorder(
+                                                                        Color.accentColor.opacity(0.55),
+                                                                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                                            )
+                                                            .padding(8)
+                                                    }
+                                                }
+                                                .zIndex(isDragging ? 1 : 0)
+                                                // It follows the cursor exactly; only the columns around it animate.
+                                                .transaction { transaction in
+                                                    if isDragging { transaction.animation = nil }
                                                 }
                                                 .opacity(isHidden ? 0 : 1)
                                                 // Its scripts are fixed when the web view is created, so rebuild it
@@ -428,35 +549,33 @@ struct ContentView: View {
                                     Alert(title: Text(alertMessage ?? ""))
                                 }
 
-                                ScrollView(.horizontal) {
-                                    HStack(spacing: 24) {
-                                        HStack(spacing: 8) {
-                                            Button {
-                                                openURL(URL(string: "https://github.com/danielcamposlozada/XDeck-Multi")!)
-                                            } label: {
-                                                GitHubIcon()
-                                                    .foregroundColor(Self.textColor(for: backgroundColor))
-                                                    .frame(width: 20, height: 20)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .onHover { inside in
-                                                if inside {
-                                                    NSCursor.pointingHand.push()
-                                                } else {
-                                                    NSCursor.pop()
-                                                }
-                                            }
-                                            UpdateButton()
-                                        }
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 14) {
                                         Button {
                                             isShowingColumnsSheet = true
                                         } label: {
                                             Label("Columns", systemImage: "plus.rectangle.on.rectangle")
-                                                .foregroundColor(Self.textColor(for: backgroundColor))
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(
+                                                    Capsule().fill(Self.textColor(for: backgroundColor).opacity(0.14)))
                                         }
                                         .buttonStyle(.plain)
                                         .help("Add, remove or reorder columns")
+
+                                        toolbarDivider
+
+                                        HideAdsToggle(isOn: $hideAds) { Text("Hide Ads") }
+                                            .help("Hide promoted posts in every column")
+                                            .onChange(of: hideAds) { newValue in
+                                                scriptExecutionRequest = newValue
+                                                    ? WebViewConfigurations.hideAds
+                                                    : WebViewConfigurations.showAds
+                                                scriptExecutionToken += 1
+                                            }
                                         AppearanceToggle(isOn: $isDarkMode) { }
+                                            .accessibilityLabel("Dark Mode")
+                                            .help(isDarkMode ? "Switch to light mode" : "Switch to dark mode")
                                             .disabled(isDarkModeUpdating)
                                             .onChange(of: isDarkMode) { newValue in
                                                 scriptExecutionRequest = Self.setNightModeCookieScript(isDarkMode: isDarkMode)
@@ -470,42 +589,79 @@ struct ContentView: View {
                                                     }
                                                 }
                                             }
-                                        HideAdsToggle(isOn: $hideAds) { Text("Hide Ads") }
-                                            .onChange(of: hideAds) { newValue in
-                                                scriptExecutionRequest = newValue
-                                                    ? WebViewConfigurations.hideAds
-                                                    : WebViewConfigurations.showAds
-                                                scriptExecutionToken += 1
+
+                                        toolbarDivider
+
+                                        // Zoom: out, current level (click to reset), in.
+                                        HStack(spacing: 2) {
+                                            ToolbarIconButton(systemImage: "minus", help: "Zoom Out (⌘-)") {
+                                                zoom(by: -Self.zoomStep)
                                             }
-                                        Text("⌘+ Zoom In")
-                                            .foregroundColor(Self.textColor(for: backgroundColor))
-                                        Text("⌘- Zoom out")
-                                            .foregroundColor(Self.textColor(for: backgroundColor))
-                                        Text("⌘. Reset Zoom")
-                                            .foregroundColor(Self.textColor(for: backgroundColor))
-                                        Text("⌘R Refresh")
-                                            .foregroundColor(Self.textColor(for: backgroundColor))
-                                        if isWindowFittingEnabled {
-                                            Text("⌘F Fit Window")
-                                                .foregroundColor(Self.textColor(for: backgroundColor))
+                                            .disabled(pageZoom <= Self.zoomRange.lowerBound)
+                                            Button {
+                                                pageZoom = 1
+                                            } label: {
+                                                Text("\(Int((pageZoom * 100).rounded()))%")
+                                                    .monospacedDigit()
+                                                    .frame(minWidth: 42)
+                                                    .contentShape(Rectangle())
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help("Reset Zoom (⌘.)")
+                                            .accessibilityLabel("Zoom \(Int((pageZoom * 100).rounded())) percent. Reset zoom")
+                                            ToolbarIconButton(systemImage: "plus", help: "Zoom In (⌘+)") {
+                                                zoom(by: Self.zoomStep)
+                                            }
+                                            .disabled(pageZoom >= Self.zoomRange.upperBound)
                                         }
-                                        Text("⌘, Settings")
-                                            .foregroundColor(Self.textColor(for: backgroundColor))
-                                        Spacer()
+                                        ToolbarIconButton(systemImage: "arrow.clockwise", help: "Refresh All Columns (⌘R)") {
+                                            refreshSwitch.toggle()
+                                        }
+                                        if isWindowFittingEnabled {
+                                            ToolbarIconButton(
+                                                systemImage: "arrow.left.and.right.square", help: "Fit Window to Columns (⌘F)"
+                                            ) {
+                                                fitWindowRequestToken += 1
+                                            }
+                                        }
+                                        ToolbarIconButton(systemImage: "gearshape", help: "Open Settings Folder (⌘,)") {
+                                            openSettingsFolder()
+                                        }
+
+                                        toolbarDivider
+
+                                        HStack(spacing: 8) {
+                                            Button {
+                                                openURL(URL(string: "https://github.com/danielcamposlozada/XDeck-Multi")!)
+                                            } label: {
+                                                GitHubIcon()
+                                                    .foregroundColor(Self.textColor(for: backgroundColor))
+                                                    .frame(width: 18, height: 18)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help("XDeck Multi on GitHub")
+                                            .accessibilityLabel("XDeck Multi on GitHub")
+                                            .onHover { inside in
+                                                if inside {
+                                                    NSCursor.pointingHand.push()
+                                                } else {
+                                                    NSCursor.pop()
+                                                }
+                                            }
+                                            UpdateButton()
+                                        }
                                     }
-                                    // Without this, the trailing Spacer expands to fill whatever width the
-                                    // enclosing ScrollView proposes, making this row's measured width track the
-                                    // window's current width instead of its own natural content width.
-                                    .fixedSize(horizontal: true, vertical: false)
+                                    .font(.system(size: 13))
                                     .foregroundColor(Self.textColor(for: backgroundColor))
-                                    .padding()
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .frame(minWidth: geometry.size.width, alignment: .leading)
                                     .overlay(
                                         Rectangle()
                                             .frame(height: 1, alignment: .top)
                                             .foregroundColor(Self.borderColor(for: backgroundColor)),
                                         alignment: .top
                                     )
-                                    .frame(minWidth: geometry.size.width, alignment: .leading)
                                 }
                             }
                         } else {
@@ -513,11 +669,16 @@ struct ContentView: View {
                             let loginAccountKey = pendingLoginAccountKey ?? ""
                             let loginAccountLabel: String? = hasMultipleAccounts
                                 ? (loginAccountKey.isEmpty ? "default" : loginAccountKey) : nil
+                            let loginProgress: String? = hasMultipleAccounts
+                                ? (appConfig.accountKeys.firstIndex(of: loginAccountKey)).map {
+                                    "Account \($0 + 1) of \(appConfig.accountKeys.count)"
+                                } : nil
                             let skipLogin: (() -> Void)? = hasMultipleAccounts
                                 ? { _ = skippedAccountKeys.insert(loginAccountKey) } : nil
                             LoginView(
                                 accountKey: loginAccountKey,
                                 accountLabel: loginAccountLabel,
+                                progress: loginProgress,
                                 onSkip: skipLogin,
                                 isShowingAlert: $isShowingAlert,
                                 alertMessage: $alertMessage,
@@ -593,39 +754,29 @@ struct ContentView: View {
     }
 }
 
-/// Accepts a column dragged by its title bar onto another column's title bar.
-private struct ColumnDropDelegate: DropDelegate {
-    let targetID: UUID
-    @Binding var draggingID: UUID?
-    @Binding var dropTargetID: UUID?
-    let onMove: (UUID, UUID) -> Void
+/// An icon button for the bottom toolbar, with a hover highlight and its shortcut in the tooltip.
+private struct ToolbarIconButton: View {
+    let systemImage: String
+    let help: String
+    let action: () -> Void
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
-    func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [UTType.plainText])
-    }
-
-    func dropEntered(info: DropInfo) {
-        dropTargetID = targetID
-    }
-
-    func dropExited(info: DropInfo) {
-        if dropTargetID == targetID { dropTargetID = nil }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        draggingID = nil
-        dropTargetID = nil
-        // Reads the dragged column's id from the drop itself, so text dragged in from elsewhere does nothing.
-        guard let provider = info.itemProviders(for: [UTType.plainText]).first else { return false }
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let text = object as? String, let sourceID = UUID(uuidString: text) else { return }
-            DispatchQueue.main.async { onMove(sourceID, targetID) }
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(isHovering && isEnabled ? 0.1 : 0)))
+                .contentShape(Rectangle())
         }
-        return true
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.4)
+        .onHover { isHovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 

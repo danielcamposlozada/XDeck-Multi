@@ -36,7 +36,7 @@ MVVM pattern with JavaScript injection for web content manipulation.
 
 ### Configuration
 
-User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `search` (𝕏's Explore page, with its search box), `custom` (arbitrary URL). The **Columns** button in the bottom toolbar (`ColumnsSheet`) adds, removes and reorders columns and writes them back with `AppConfig.saveColumns`, keeping the file's other keys. Columns can also be dragged by their title bar onto another column's title bar (`ColumnDropDelegate` in `ContentView.swift`); drops are only accepted on title bars because the WKWebViews take text drags themselves.
+User settings live at `~/.config/XDeckMulti/settings.json`. Schema at `~/.config/XDeckMulti/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `search` (𝕏's Explore page, with its search box), `custom` (arbitrary URL). The **Columns** button in the bottom toolbar (`ColumnsSheet`) adds, removes and reorders columns and writes them back with `AppConfig.saveColumns`, keeping the file's other keys. Columns can also be dragged by their title bar in `ContentView`: the whole column follows the cursor (`updateColumnDrag`/`endColumnDrag`), neighbors swap live once it passes their middle, and column roles (side header, theme detection) stay frozen in `columnsAtDragStart` until the drop so no web view reloads mid-drag. The app is sandboxed, so on the Mac the real file is `~/Library/Containers/com.danielcamposlozada.XDeckMulti/Data/.config/XDeckMulti/settings.json`.
 
 ## public/
 

@@ -49,18 +49,26 @@ struct AppearanceToggleStyle: ToggleStyle {
                     configuration.isOn ? Color(hex: "#606D7C") : Color(hex: "#BCC9D2")
                 )
                 .opacity(isEnabled ? 1 : 0.5)
-                .onHover { inside in
-                    if isEnabled && inside {
-                        NSCursor.pointingHand.push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-                .onTapGesture(perform: {
-                    guard isEnabled else { return }
-                    configuration.isOn.toggle()
-                })
 
+        }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture {
+            guard isEnabled else { return }
+            configuration.isOn.toggle()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            guard isEnabled else { return }
+            configuration.isOn.toggle()
         }
     }
 
