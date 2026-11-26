@@ -28,6 +28,7 @@ describe('columnScripts', () => {
       'detectMediaOverlay',
       'findThemeColor',
       'hideBottomBar',
+      'videoDownload',
       'hideSideHeader',
       'hidePostArea',
       'clickFollowingTab',
@@ -36,7 +37,7 @@ describe('columnScripts', () => {
       columnScripts({ ...column, type: 'forYou', showsSideHeader: true, hideAds: true }).map(
         (script) => script.name,
       ),
-    ).toEqual(['global', 'detectMediaOverlay', 'findThemeColor', 'hideBottomBar', 'hideAds', 'clickForYouTab']);
+    ).toEqual(['global', 'detectMediaOverlay', 'findThemeColor', 'hideBottomBar', 'videoDownload', 'hideAds', 'clickForYouTab']);
     expect(columnScripts({ ...column, type: 'custom', isXColumn: false }).map((script) => script.name)).toEqual([
       'global',
       'detectMediaOverlay',

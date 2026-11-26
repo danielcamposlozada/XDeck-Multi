@@ -71,6 +71,7 @@ The scripts in `shared/scripts/` run inside x.com and talk back to the app with 
 |---|---|---|
 | `console.js`, `getElementsByXPath.js`, `waitForElement.js` | At page start | Forwards errors to the app; helpers. |
 | `detectMediaOverlay.js` | At page start | Reports when a photo or video opens, so its column fills the window. |
+| `videoDownload.js` | At page start (X columns) | Reads the MP4 files X lists in its own API responses (`video_info.variants`, through `fetch` and `XMLHttpRequest`), adds a download button to each video and GIF, and sends the best one's address. The app downloads it, only from `video.twimg.com`, into the Downloads folder. |
 | `findUserName.js` | After load (login) | Reports the signed-in user name. |
 | `findThemeColor.js` | After load (every X column, login) | Reports X's theme color; the app follows it (light or dark). |
 | `clickForYouTab.js`, `clickFollowingTab.js` | After load | Selects the timeline tab. |

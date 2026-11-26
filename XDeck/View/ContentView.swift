@@ -76,6 +76,9 @@ struct ContentView: View {
     /// The column order when the drag began. Which columns show 𝕏's side navigation comes from it
     /// until the drop, so widths don't jump while the user is still moving things.
     @State var columnsAtDragStart: [AppConfig.Column]? = nil
+    /// The last video download, shown in the toolbar.
+    @State var downloadNotice: DownloadNotice? = nil
+    @State var downloadNoticeToken = 0
 
     @State var measuredContentWidth: CGFloat = 0
     @State var hasFitWindowToContent = false
@@ -143,6 +146,72 @@ struct ContentView: View {
 
     private func openSettingsFolder() {
         NSWorkspace.shared.open(AppConfig.configDirectoryUrl)
+    }
+
+    private func showDownloadNotice(_ notice: DownloadNotice) {
+        downloadNotice = notice
+        downloadNoticeToken += 1
+        guard !notice.isWorking else { return }
+        let token = downloadNoticeToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            if downloadNoticeToken == token { downloadNotice = nil }
+        }
+    }
+
+    /// Saves a video a column's download button asked for to the Downloads folder.
+    private func startVideoDownload(_ body: String) {
+        guard let (url, name) = VideoDownloader.request(from: body) else { return }
+        showDownloadNotice(DownloadNotice(text: "Downloading \(name).mp4…", fileURL: nil, isWorking: true))
+        Task {
+            do {
+                let file = try await VideoDownloader.download(url, baseName: name)
+                await MainActor.run {
+                    showDownloadNotice(DownloadNotice(text: "Saved \(file.lastPathComponent)", fileURL: file, isWorking: false))
+                }
+            } catch {
+                await MainActor.run {
+                    showDownloadNotice(DownloadNotice(
+                        text: "Couldn't download the video. Try again in a moment.", fileURL: nil, isWorking: false))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var downloadNoticeView: some View {
+        if let notice = downloadNotice {
+            HStack(spacing: 8) {
+                if notice.isWorking {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: notice.fileURL == nil ? "exclamationmark.triangle" : "checkmark.circle.fill")
+                        .foregroundColor(notice.fileURL == nil ? .orange : .green)
+                }
+                Text(notice.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 260)
+                if let file = notice.fileURL {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([file])
+                    }
+                    .buttonStyle(.link)
+                }
+                Button {
+                    downloadNotice = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+            .accessibilityElement(children: .contain)
+        }
     }
 
     private var toolbarDivider: some View {
@@ -359,7 +428,7 @@ struct ContentView: View {
                     if column.isXColumn {
                         // Every 𝕏 column reports the theme (they all share it), so no column has to
                         // be rebuilt when a different one becomes the leftmost.
-                        scripts.append(contentsOf: [.findThemeColor, .hideBottomBar])
+                        scripts.append(contentsOf: [.findThemeColor, .hideBottomBar, .videoDownload])
                         if !showsSideHeader {
                             scripts.append(contentsOf: [.hideSideHeader, .hidePostArea])
                         }
@@ -544,6 +613,7 @@ struct ContentView: View {
 
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 14) {
+                                        downloadNoticeView
                                         Button {
                                             isShowingColumnsSheet = true
                                         } label: {
@@ -711,7 +781,7 @@ struct ContentView: View {
                                 let color = Color(hex: message.body)
                                 backgroundColor = color
                                 isDarkMode = color != Color.white
-                            case .mediaOverlay:
+                            case .mediaOverlay, .downloadVideo:
                                 break
                             }
                             // Clear it so the next account's messages register even if they repeat this one.
@@ -737,6 +807,10 @@ struct ContentView: View {
                                 } else if let id = UUID(uuidString: message.body) {
                                     expandedColumnID = id
                                 }
+                            case .downloadVideo:
+                                startVideoDownload(message.body)
+                                // Clear it, so downloading the same video again still registers.
+                                self.webViewMessage = nil
                             }
                         }
                     }
@@ -744,6 +818,47 @@ struct ContentView: View {
                         isShowingAlert = message != nil
                     }
                 } // End of GeometryReader
+    }
+}
+
+struct DownloadNotice {
+    var text: String
+    /// The saved file, once the download finished.
+    var fileURL: URL?
+    var isWorking: Bool
+}
+
+/// Downloads 𝕏 videos (only from 𝕏's video server) into the Downloads folder.
+enum VideoDownloader {
+    private struct Request: Decodable {
+        let url: String
+        let name: String
+    }
+
+    /// The video address and a safe file name from a download button's message.
+    static func request(from body: String) -> (URL, String)? {
+        guard let data = body.data(using: .utf8),
+              let request = try? JSONDecoder().decode(Request.self, from: data),
+              let url = URL(string: request.url), url.scheme == "https", url.host() == "video.twimg.com"
+        else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let name = String(String.UnicodeScalarView(request.name.unicodeScalars.filter { allowed.contains($0) }))
+        return (url, "x-" + (name.isEmpty ? "video" : String(name.prefix(80))))
+    }
+
+    static func download(_ url: URL, baseName: String) async throws -> URL {
+        let (temporaryFile, response) = try await URLSession.shared.download(from: url)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let folder = try FileManager.default.url(
+            for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        var destination = folder.appending(path: baseName + ".mp4")
+        var copy = 1
+        while FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
+            copy += 1
+            destination = folder.appending(path: "\(baseName) (\(copy)).mp4")
+        }
+        try FileManager.default.moveItem(at: temporaryFile, to: destination)
+        return destination
     }
 }
 

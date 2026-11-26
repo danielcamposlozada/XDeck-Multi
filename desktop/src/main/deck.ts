@@ -1,6 +1,6 @@
 // The window: login screens one account at a time, then a row of columns, each a WebContentsView
 // with its account's session. The port of ContentView, LoginView and WebView from the macOS edition.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   BaseWindow,
@@ -36,6 +36,7 @@ import {
   type AppConfig,
   type Column,
 } from './config';
+import { parseVideoRequest, uniqueVideoPath } from './download';
 import { computeLayout } from './layout';
 import { decideNavigation, isWebUrl } from './navigation';
 import {
@@ -139,6 +140,9 @@ export class Deck {
   /** Where the host page has the columns while one is being dragged. */
   private dragFrame: XDeckIpc.DragFrame | null = null;
   private columnsDraft: { rows: DraftColumn[]; error: string | null } | null = null;
+  private notice: XDeckIpc.Notice | null = null;
+  private noticeFile: string | null = null;
+  private noticeTimer: NodeJS.Timeout | null = null;
   private background: string;
   private isDarkModeUpdating = false;
   private darkModeTimer: NodeJS.Timeout | null = null;
@@ -560,6 +564,7 @@ export class Deck {
             width: layout.slots[index]?.width ?? 0,
           })),
           dialog: this.columnsDialogState(),
+          notice: this.notice,
           version: {
             current: app.getVersion(),
             isDev: !app.isPackaged,
@@ -668,6 +673,12 @@ export class Deck {
         }
         break;
       }
+      case 'show-downloaded-file':
+        if (this.noticeFile !== null) shell.showItemInFolder(this.noticeFile);
+        break;
+      case 'dismiss-notice':
+        this.setNotice(null);
+        break;
       case 'open-link': {
         const version = app.getVersion();
         const urls = {
@@ -826,6 +837,47 @@ export class Deck {
     }
   }
 
+  // MARK: Video downloads
+
+  private setNotice(notice: XDeckIpc.Notice | null, file: string | null = null): void {
+    this.notice = notice;
+    this.noticeFile = file;
+    if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
+    this.noticeTimer = null;
+    if (notice !== null && !notice.isWorking) {
+      this.noticeTimer = setTimeout(() => {
+        this.setNotice(null);
+      }, 8000);
+    }
+    this.sendState();
+  }
+
+  /** Saves a video a column's download button asked for to the Downloads folder. */
+  private async downloadVideo(body: string): Promise<void> {
+    const request = parseVideoRequest(body);
+    if (request === null) return;
+    const name = `${request.baseName}.mp4`;
+    this.setNotice({ text: `Downloading ${name}…`, isWorking: true, canShowFile: false, isError: false });
+    try {
+      const response = await net.fetch(request.url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = Buffer.from(await response.arrayBuffer());
+      const path = uniqueVideoPath(app.getPath('downloads'), request.baseName, existsSync);
+      writeFileSync(path, data);
+      this.setNotice(
+        { text: `Saved ${path.split(/[\\/]/).pop() ?? name}`, isWorking: false, canShowFile: true, isError: false },
+        path,
+      );
+    } catch {
+      this.setNotice({
+        text: "Couldn't download the video. Try again in a moment.",
+        isWorking: false,
+        canShowFile: false,
+        isError: true,
+      });
+    }
+  }
+
   // MARK: Pages
 
   private readonly onPageScript = (event: IpcMainEvent): void => {
@@ -892,6 +944,9 @@ export class Deck {
         this.layoutViews();
         break;
       }
+      case 'downloadVideo':
+        if (info.kind === 'column') void this.downloadVideo(message.body);
+        break;
       case 'debug':
         if (!app.isPackaged) console.log(`[column ${info.kind === 'column' ? info.id : 'login'}] ${message.body}`);
         break;
@@ -920,6 +975,7 @@ export class Deck {
     ipcMain.off('xdeck:page-message', this.onPageMessage);
     ipcMain.off('xdeck:scroll-by', this.onScrollBy);
     if (this.darkModeTimer !== null) clearTimeout(this.darkModeTimer);
+    if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
   }
 
   private broadcast(script: string, onlyXColumns: boolean): void {

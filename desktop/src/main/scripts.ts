@@ -18,6 +18,7 @@ export const SCRIPT_FILES = [
   'hideAds',
   'showAds',
   'detectMediaOverlay',
+  'videoDownload',
   'setNightMode',
 ] as const;
 export type ScriptFile = (typeof SCRIPT_FILES)[number];
@@ -41,11 +42,12 @@ export type OnLoadScript =
   | { name: 'hideSideHeader' }
   | { name: 'hideBottomBar' }
   | { name: 'hideAds' }
+  | { name: 'videoDownload' }
   | { name: 'detectMediaOverlay'; columnId: number };
 
 /** Scripts that wait for DOMContentLoaded; the rest run as soon as the page starts. */
 function runsAfterLoad(script: OnLoadScript): boolean {
-  return script.name !== 'global' && script.name !== 'detectMediaOverlay';
+  return script.name !== 'global' && script.name !== 'detectMediaOverlay' && script.name !== 'videoDownload';
 }
 
 function contentOf(library: ScriptLibrary, script: OnLoadScript): string {
@@ -99,7 +101,7 @@ export function columnScripts(options: ColumnScriptOptions): OnLoadScript[] {
   if (options.isXColumn) {
     // Every X column reports the theme (they all share it), so none has to reload when a
     // different column becomes the leftmost.
-    scripts.push({ name: 'findThemeColor' }, { name: 'hideBottomBar' });
+    scripts.push({ name: 'findThemeColor' }, { name: 'hideBottomBar' }, { name: 'videoDownload' });
     if (!options.showsSideHeader) {
       scripts.push({ name: 'hideSideHeader' }, { name: 'hidePostArea' });
     }

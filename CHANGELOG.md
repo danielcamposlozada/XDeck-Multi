@@ -2,6 +2,11 @@
 
 All notable changes to XDeck Multi are documented here. XDeck Multi is a fork of [XDeck](https://github.com/morishin/XDeck) 3.3.
 
+## 1.4.0
+
+### Added
+- **Download videos and GIFs.** Each video and GIF in an 𝕏 column gets a ⬇︎ button. The app saves the best quality 𝕏 offers to your Downloads folder, named after the account and the post (`x-NASA-1234567890.mp4`), and a notice in the toolbar shows the file. Only files from 𝕏's video server are downloaded, and nothing is overwritten.
+
 ## 1.3.0
 
 The Windows and Linux edition catches up with macOS.

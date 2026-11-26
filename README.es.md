@@ -38,7 +38,7 @@
 
 ### Lectura
 - Ocultá anuncios y posts promocionados con un interruptor.
-- Modo claro y oscuro.
+- **Descargá videos y GIFs** con el botón ⬇︎ de cada uno. Se guardan en tu carpeta Descargas, en la mejor calidad que ofrece 𝕏.
 - Zoom y recarga de todas las columnas a la vez, desde la barra de abajo o el teclado.
 - La barra de navegación de celular de 𝕏 está oculta, así las columnas angostas muestran solo posts.
 

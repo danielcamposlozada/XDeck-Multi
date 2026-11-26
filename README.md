@@ -39,6 +39,7 @@
 ### Reading
 - Hide ads and promoted posts with one switch.
 - Light and dark mode.
+- **Download videos and GIFs** with the ⬇︎ button on each one. They're saved to your Downloads folder in the best quality 𝕏 offers.
 - Zoom in and out of every column at once, and refresh them all, from the bottom toolbar or the keyboard.
 - 𝕏's mobile navigation bar is hidden, so narrow columns show only posts.
 

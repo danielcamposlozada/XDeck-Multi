@@ -45,6 +45,8 @@ declare namespace XDeckIpc {
         columns: ColumnInfo[];
         /** The Columns window, while it is open. */
         dialog: ColumnsDialog | null;
+        /** The last video download. */
+        notice: Notice | null;
         version: VersionInfo;
       }
     | { mode: 'error'; background: string; message: string; settingsPath: string };
@@ -84,6 +86,15 @@ declare namespace XDeckIpc {
     error: string | null;
   }
 
+  interface Notice {
+    text: string;
+    /** Set while the download runs. */
+    isWorking: boolean;
+    /** The saved file can be shown in the file manager. */
+    canShowFile: boolean;
+    isError: boolean;
+  }
+
   type NewColumnType = 'forYou' | 'following' | 'notifications' | 'profile' | 'search' | 'custom';
 
   type HostAction =
@@ -110,6 +121,8 @@ declare namespace XDeckIpc {
       }
     | { type: 'columns-remove'; index: number }
     | { type: 'columns-move'; index: number; delta: -1 | 1 }
+    | { type: 'show-downloaded-file' }
+    | { type: 'dismiss-notice' }
     | { type: 'open-link'; link: 'github' | 'release' | 'latest-release' };
 
   /** Where the dragged column and the ones around it are right now, in content coordinates. */

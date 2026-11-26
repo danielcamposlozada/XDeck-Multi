@@ -49,6 +49,8 @@ const ICONS: Readonly<Record<string, string>> = {
   up: `<path ${STROKE} d="m6 15 6-6 6 6"/>`,
   down: `<path ${STROKE} d="m6 9 6 6 6-6"/>`,
   addAccount: `<g ${STROKE}><circle cx="10" cy="8" r="4"/><path d="M2 21a8 8 0 0 1 13-6.2M19 15v6M16 18h6"/></g>`,
+  close: `<path ${STROKE} d="M6 6l12 12M18 6 6 18"/>`,
+  check: `<g ${STROKE}><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></g>`,
   warning: `<g ${STROKE}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></g>`,
 };
 
@@ -483,6 +485,20 @@ sections.dialog.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') window.xdeckHost.send({ type: 'columns-cancel' });
 });
 
+// MARK: Download notice
+
+function renderNotice(notice: XDeckIpc.Notice | null): void {
+  byId('notice').hidden = notice === null;
+  if (notice === null) return;
+  byId('notice-text').textContent = notice.text;
+  byId('notice-text').title = notice.text;
+  byId('notice-show').hidden = !notice.canShowFile;
+  const icon = byId('notice-icon');
+  icon.className = `notice-icon ${notice.isWorking ? 'working' : notice.isError ? 'failed' : 'done'}`;
+  icon.replaceChildren();
+  if (!notice.isWorking) icon.append(iconElement(notice.isError ? 'warning' : 'check', ''));
+}
+
 // MARK: Render
 
 function render(state: XDeckIpc.HostState): void {
@@ -523,6 +539,7 @@ function render(state: XDeckIpc.HostState): void {
       buttonById('zoom-in').disabled = !state.canZoomIn;
       buttonById('zoom-out').disabled = !state.canZoomOut;
       renderVersion(state.version);
+      renderNotice(state.notice);
       if (state.dialog !== null) renderDialog(state.dialog);
       dialogWasOpen = state.dialog !== null;
       break;
@@ -569,3 +586,5 @@ onClick('github', { type: 'open-link', link: 'github' });
 onClick('open-settings', { type: 'open-settings-folder' });
 onClick('dialog-cancel', { type: 'columns-cancel' });
 onClick('dialog-save', { type: 'columns-save' });
+onClick('notice-show', { type: 'show-downloaded-file' });
+onClick('notice-dismiss', { type: 'dismiss-notice' });
