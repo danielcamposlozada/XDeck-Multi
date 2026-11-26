@@ -18,6 +18,9 @@ const api: XDeckHostApi = {
   reportLayout(layout) {
     ipcRenderer.send('xdeck:host-layout', layout);
   },
+  reportDragFrame(frame) {
+    ipcRenderer.send('xdeck:host-drag-frame', frame);
+  },
 };
 
 contextBridge.exposeInMainWorld('xdeckHost', api);

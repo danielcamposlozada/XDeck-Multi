@@ -5,6 +5,7 @@ import {
   LOGIN_SCRIPTS,
   buildPageScript,
   columnScripts,
+  compactScript,
   loadScriptLibrary,
   nightModeScript,
   type ColumnScriptOptions,
@@ -14,9 +15,8 @@ const library = loadScriptLibrary(join(__dirname, '..', '..', 'shared', 'scripts
 
 const column: ColumnScriptOptions = {
   type: 'following',
-  columnIndex: 2,
+  columnId: 2,
   isXColumn: true,
-  isLeftMostXColumn: false,
   showsSideHeader: false,
   hideAds: false,
 };
@@ -26,13 +26,14 @@ describe('columnScripts', () => {
     expect(columnScripts(column).map((script) => script.name)).toEqual([
       'global',
       'detectMediaOverlay',
+      'findThemeColor',
       'hideBottomBar',
       'hideSideHeader',
       'hidePostArea',
       'clickFollowingTab',
     ]);
     expect(
-      columnScripts({ ...column, type: 'forYou', isLeftMostXColumn: true, showsSideHeader: true, hideAds: true }).map(
+      columnScripts({ ...column, type: 'forYou', showsSideHeader: true, hideAds: true }).map(
         (script) => script.name,
       ),
     ).toEqual(['global', 'detectMediaOverlay', 'findThemeColor', 'hideBottomBar', 'hideAds', 'clickForYouTab']);
@@ -60,6 +61,16 @@ describe('buildPageScript', () => {
       expect(() => new Script(buildPageScript(library, scripts))).not.toThrow();
     }
     expect(() => new Script(library.showAds)).not.toThrow();
+  });
+
+  it('toggles the side navigation in place', () => {
+    const hide = compactScript(library, true);
+    expect(hide).toContain("getElementById('xdeck-hide-side-header')");
+    expect(hide).toContain(library.hideSideHeader);
+    expect(() => new Script(hide)).not.toThrow();
+    const show = compactScript(library, false);
+    expect(show).toContain("getElementById('xdeck-hide-post-area')?.remove()");
+    expect(() => new Script(show)).not.toThrow();
   });
 
   it('sets the night mode cookie', () => {

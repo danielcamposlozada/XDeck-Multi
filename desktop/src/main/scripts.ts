@@ -41,7 +41,7 @@ export type OnLoadScript =
   | { name: 'hideSideHeader' }
   | { name: 'hideBottomBar' }
   | { name: 'hideAds' }
-  | { name: 'detectMediaOverlay'; columnIndex: number };
+  | { name: 'detectMediaOverlay'; columnId: number };
 
 /** Scripts that wait for DOMContentLoaded; the rest run as soon as the page starts. */
 function runsAfterLoad(script: OnLoadScript): boolean {
@@ -53,8 +53,8 @@ function contentOf(library: ScriptLibrary, script: OnLoadScript): string {
     case 'global':
       return [library.console, library.getElementsByXPath, library.waitForElement].join('\n');
     case 'detectMediaOverlay':
-      // The macOS edition identifies columns by id; here the index does the same job.
-      return library.detectMediaOverlay.replaceAll('__COLUMN_ID__', String(script.columnIndex));
+      // Columns are identified by an id that stays the same when they move, like on macOS.
+      return library.detectMediaOverlay.replaceAll('__COLUMN_ID__', String(script.columnId));
     default:
       return library[script.name];
   }
@@ -84,9 +84,8 @@ export function buildPageScript(library: ScriptLibrary, scripts: readonly OnLoad
 
 export interface ColumnScriptOptions {
   type: ColumnType;
-  columnIndex: number;
+  columnId: number;
   isXColumn: boolean;
-  isLeftMostXColumn: boolean;
   showsSideHeader: boolean;
   hideAds: boolean;
 }
@@ -95,11 +94,12 @@ export interface ColumnScriptOptions {
 export function columnScripts(options: ColumnScriptOptions): OnLoadScript[] {
   const scripts: OnLoadScript[] = [
     { name: 'global' },
-    { name: 'detectMediaOverlay', columnIndex: options.columnIndex },
+    { name: 'detectMediaOverlay', columnId: options.columnId },
   ];
-  if (options.isLeftMostXColumn) scripts.push({ name: 'findThemeColor' });
   if (options.isXColumn) {
-    scripts.push({ name: 'hideBottomBar' });
+    // Every X column reports the theme (they all share it), so none has to reload when a
+    // different column becomes the leftmost.
+    scripts.push({ name: 'findThemeColor' }, { name: 'hideBottomBar' });
     if (!options.showsSideHeader) {
       scripts.push({ name: 'hideSideHeader' }, { name: 'hidePostArea' });
     }
@@ -118,4 +118,23 @@ export const LOGIN_SCRIPTS: readonly OnLoadScript[] = [
 
 export function nightModeScript(library: ScriptLibrary, isDarkMode: boolean): string {
   return library.setNightMode.replaceAll('__NIGHT_MODE__', isDarkMode ? '1' : '0');
+}
+
+/** Ids of the styles hideSideHeader and hidePostArea add (see shared/scripts). */
+const COMPACT_STYLE_IDS = ['xdeck-hide-side-header', 'xdeck-hide-post-area'] as const;
+
+/**
+ * Shows or hides X's side navigation and post area on a page that is already open, for a column
+ * whose role changed because the columns moved. No reload needed.
+ */
+export function compactScript(library: ScriptLibrary, isCompact: boolean): string {
+  if (!isCompact) {
+    return COMPACT_STYLE_IDS.map((id) => `document.getElementById('${id}')?.remove();`).join('\n');
+  }
+  return [
+    `if (!document.getElementById('${COMPACT_STYLE_IDS[0]}')) {`,
+    `(() => {\n${library.hideSideHeader}\n})();`,
+    `(() => {\n${library.hidePostArea}\n})();`,
+    '}',
+  ].join('\n');
 }

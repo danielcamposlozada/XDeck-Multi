@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   BaseWindow,
+  Menu,
   WebContentsView,
   app,
   dialog,
@@ -21,17 +22,25 @@ import {
   DEFAULT_WINDOW_WIDTH,
   accountKey,
   accountKeys,
+  columnIcon,
+  columnTitle,
   columnUrl,
   isXColumn,
-  leftMostXColumnIndex,
+  normalizeCustomUrl,
   partitionFor,
   profileUrlFor,
+  searchColumn,
+  searchQuery,
   sideHeaderColumnIndices,
+  withColumns,
   type AppConfig,
+  type Column,
 } from './config';
 import { computeLayout } from './layout';
 import { decideNavigation, isWebUrl } from './navigation';
 import {
+  MAX_ZOOM,
+  MIN_ZOOM,
   ZOOM_STEP,
   clampZoom,
   defaultBackground,
@@ -43,6 +52,7 @@ import {
   LOGIN_SCRIPTS,
   buildPageScript,
   columnScripts,
+  compactScript,
   nightModeScript,
   type ScriptLibrary,
 } from './scripts';
@@ -55,7 +65,6 @@ import {
 } from './version';
 
 const LOGIN_URL = 'https://x.com/login';
-const SPONSOR_URL = 'https://github.com/sponsors/morishin?frequency=one-time';
 /** Covers the reload plus the theme-color debounce; a fallback if the page never confirms. */
 const DARK_MODE_UPDATE_TIMEOUT_MS = 5000;
 
@@ -76,13 +85,22 @@ export interface DeckOptions {
   skipLogins: boolean;
 }
 
-type PageInfo =
-  | { kind: 'login'; accountKey: string }
-  | { kind: 'column'; index: number };
+type PageInfo = { kind: 'login'; accountKey: string } | { kind: 'column'; id: number };
 
+/** A column and its web view. The id stays the same when the column moves. */
 interface ColumnEntry {
-  view: WebContentsView;
-  url: string;
+  id: number;
+  column: Column;
+  view: WebContentsView | null;
+  url: string | null;
+  /** Whether the page hides X's side navigation (it isn't its account's first column). */
+  isCompact: boolean;
+}
+
+/** A row of the Columns window: an existing column (with its id) or one added there. */
+interface DraftColumn {
+  id: number | null;
+  column: Column;
 }
 
 interface PageMessage {
@@ -101,6 +119,10 @@ function parsePageMessage(raw: string): PageMessage | null {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class Deck {
   private readonly window: BaseWindow;
   private readonly host: WebContentsView;
@@ -108,11 +130,15 @@ export class Deck {
   private readonly profileUrls = new Map<string, string>();
   private readonly skippedAccountKeys = new Set<string>();
   private readonly preparedSessions = new Set<Session>();
-  private columns: (ColumnEntry | null)[] = [];
+  private entries: ColumnEntry[] = [];
+  private nextColumnId = 1;
   private loginView: WebContentsView | null = null;
   private mode: XDeckIpc.HostState['mode'] = 'loading';
   private hostLayout: XDeckIpc.HostLayout | null = null;
-  private expandedColumnIndex: number | null = null;
+  private expandedColumnId: number | null = null;
+  /** Where the host page has the columns while one is being dragged. */
+  private dragFrame: XDeckIpc.DragFrame | null = null;
+  private columnsDraft: { rows: DraftColumn[]; error: string | null } | null = null;
   private background: string;
   private isDarkModeUpdating = false;
   private darkModeTimer: NodeJS.Timeout | null = null;
@@ -158,6 +184,12 @@ export class Deck {
       this.dispose();
     });
 
+    if ('error' in options.config) {
+      this.entries = [];
+    } else {
+      this.entries = options.config.columns.map((column) => this.newEntry(column));
+    }
+
     this.registerIpc();
     this.host.webContents.once('did-finish-load', () => {
       this.window.show();
@@ -173,8 +205,22 @@ export class Deck {
 
   // MARK: Flow
 
+  private get hasConfig(): boolean {
+    return !('error' in this.options.config);
+  }
+
+  /** The current columns, in order, as settings.json has them. */
   private get config(): AppConfig | null {
-    return 'error' in this.options.config ? null : this.options.config;
+    if (!this.hasConfig) return null;
+    const base = this.options.config as AppConfig;
+    return {
+      ...(base.columnWidth === undefined ? {} : { columnWidth: base.columnWidth }),
+      columns: this.entries.map((entry) => entry.column),
+    };
+  }
+
+  private newEntry(column: Column): ColumnEntry {
+    return { id: this.nextColumnId++, column, view: null, url: null, isCompact: false };
   }
 
   private start(): void {
@@ -211,6 +257,7 @@ export class Deck {
 
   private showLogin(key: string): void {
     this.closeLoginView();
+    for (const entry of this.entries) entry.view?.setVisible(false);
     // A fresh web view for each account, so each one uses its own session.
     const view = this.createPageView(key);
     this.pages.set(view.webContents.id, { kind: 'login', accountKey: key });
@@ -231,24 +278,56 @@ export class Deck {
     this.loginView = null;
   }
 
+  /** Creates the web views the columns still need; columns that already have one keep it. */
   private showColumns(): void {
-    const config = this.config;
-    if (config === null) return;
+    if (this.config === null) return;
     this.closeLoginView();
-    this.columns = config.columns.map((column, index) => {
-      const key = accountKey(column);
-      const url = columnUrl(column, this.profileUrls.get(key));
-      if (url === null) return null;
+    this.updateCompactRoles();
+    for (const entry of this.entries) {
+      const key = accountKey(entry.column);
+      const url = columnUrl(entry.column, this.profileUrls.get(key));
+      if (entry.view !== null && entry.url === url) continue;
+      this.closeColumnView(entry);
+      if (url === null) continue;
       const view = this.createPageView(key);
-      this.pages.set(view.webContents.id, { kind: 'column', index });
+      entry.view = view;
+      entry.url = url;
+      this.pages.set(view.webContents.id, { kind: 'column', id: entry.id });
       this.window.contentView.addChildView(view);
       view.setVisible(false);
       void view.webContents.loadURL(url).catch(() => undefined);
-      return { view, url };
-    });
+    }
     this.mode = 'deck';
     this.hostLayout = null;
     this.sendState();
+  }
+
+  private closeColumnView(entry: ColumnEntry): void {
+    if (entry.view === null) return;
+    this.pages.delete(entry.view.webContents.id);
+    this.window.contentView.removeChildView(entry.view);
+    entry.view.webContents.close();
+    entry.view = null;
+    entry.url = null;
+  }
+
+  /**
+   * Which columns hide X's side navigation follows their order. A column whose role changed is
+   * updated in place, without reloading its page; its next load gets the new scripts anyway,
+   * since they are built when the page asks for them.
+   */
+  private updateCompactRoles(): void {
+    const config = this.config;
+    if (config === null) return;
+    const sideHeaders = sideHeaderColumnIndices(config);
+    this.entries.forEach((entry, index) => {
+      const isCompact = isXColumn(entry.column) && !sideHeaders.has(index);
+      if (isCompact === entry.isCompact) return;
+      entry.isCompact = isCompact;
+      void entry.view?.webContents
+        .executeJavaScript(compactScript(this.options.library, isCompact))
+        .catch(() => undefined);
+    });
   }
 
   // MARK: Views
@@ -291,13 +370,17 @@ export class Deck {
     contents.on('will-navigate', (event) => {
       const info = this.pages.get(contents.id);
       const startUrl =
-        info?.kind === 'column' ? (this.columns[info.index]?.url ?? LOGIN_URL) : LOGIN_URL;
+        info?.kind === 'column' ? (this.entryById(info.id)?.url ?? LOGIN_URL) : LOGIN_URL;
       const decision = decideNavigation(event.url, startUrl);
       if (decision === 'allow') return;
       event.preventDefault();
       if (decision === 'external') void shell.openExternal(event.url);
     });
     return view;
+  }
+
+  private entryById(id: number): ColumnEntry | undefined {
+    return this.entries.find((entry) => entry.id === id);
   }
 
   /** Keyboard shortcuts work wherever the focus is, so every web contents gets them. */
@@ -326,7 +409,7 @@ export class Deck {
   }
 
   private pageViews(): WebContentsView[] {
-    const views = this.columns.flatMap((entry) => (entry === null ? [] : [entry.view]));
+    const views = this.entries.flatMap((entry) => (entry.view === null ? [] : [entry.view]));
     if (this.loginView !== null) views.push(this.loginView);
     return views;
   }
@@ -350,13 +433,17 @@ export class Deck {
     const config = this.config;
     if (this.mode !== 'deck' || config === null) return;
 
+    // The Columns window covers the whole deck.
+    const isDialogOpen = this.columnsDraft !== null;
     const layout = this.computeColumnsLayout(area.width);
+    const dragged = new Map((this.dragFrame?.positions ?? []).map(({ id, x }) => [id, x]));
     layout.slots.forEach((slot, index) => {
-      const entry = this.columns[index];
-      if (entry === undefined || entry === null) return;
-      const x = area.x + slot.x - hostLayout.scrollLeft;
+      const entry = this.entries[index];
+      if (entry === undefined || entry.view === null) return;
+      const contentX = dragged.get(entry.id) ?? slot.x;
+      const x = area.x + contentX - hostLayout.scrollLeft;
       const isOnScreen = x + slot.width > area.x && x < area.x + area.width;
-      entry.view.setVisible(slot.visible && isOnScreen);
+      entry.view.setVisible(!isDialogOpen && slot.visible && isOnScreen);
       if (slot.visible) {
         entry.view.setBounds(roundRect({ x, y: area.y, width: slot.width, height: area.height }));
       }
@@ -370,14 +457,18 @@ export class Deck {
 
   private computeColumnsLayout(areaWidth: number): ReturnType<typeof computeLayout> {
     const config = this.config;
+    const expandedIndex =
+      this.expandedColumnId === null
+        ? -1
+        : this.entries.findIndex((entry) => entry.id === this.expandedColumnId);
     return computeLayout({
       columnCount: config?.columns.length ?? 0,
       columnWidth: config?.columnWidth,
       areaWidth,
       zoom: this.options.prefs.pageZoom,
       sideHeaderIndices: config === null ? new Set() : sideHeaderColumnIndices(config),
-      expandedIndex: this.expandedColumnIndex,
-      isPresent: this.columns.map((entry) => entry !== null),
+      expandedIndex: expandedIndex === -1 ? null : expandedIndex,
+      isPresent: this.entries.map((entry) => entry.view !== null),
     });
   }
 
@@ -385,6 +476,42 @@ export class Deck {
 
   private sendState(): void {
     this.host.webContents.send('xdeck:host-state', this.hostState());
+  }
+
+  /** The @handle of a signed-in account, or the account's name until then. */
+  private handleFor(column: Column): string | null {
+    const profileUrl = this.profileUrls.get(accountKey(column));
+    if (profileUrl !== undefined) return `@${profileUrl.split('/').pop() ?? ''}`;
+    return accountKey(column) === '' ? null : (column.account ?? '').trim();
+  }
+
+  private columnsDialogState(): XDeckIpc.ColumnsDialog | null {
+    const draft = this.columnsDraft;
+    if (draft === null) return null;
+    const accounts: string[] = [];
+    const seen = new Set<string>();
+    for (const { column } of draft.rows) {
+      const key = accountKey(column);
+      if (key !== '' && !seen.has(key)) {
+        seen.add(key);
+        accounts.push((column.account ?? '').trim());
+      }
+    }
+    return {
+      rows: draft.rows.map(({ column }) => ({
+        title: columnTitle(column),
+        subtitle:
+          searchQuery(column) !== null
+            ? 'Search · Latest'
+            : column.type === 'custom'
+              ? (column.url ?? null)
+              : null,
+        icon: columnIcon(column),
+        account: accountKey(column) === '' ? null : (column.account ?? '').trim(),
+      })),
+      accounts,
+      error: draft.error,
+    };
   }
 
   private hostState(): XDeckIpc.HostState {
@@ -399,31 +526,47 @@ export class Deck {
       }
       case 'login': {
         const config = this.config;
-        const hasMultipleAccounts = config !== null && accountKeys(config).length > 1;
+        const keys = config === null ? [] : accountKeys(config);
+        const hasMultipleAccounts = keys.length > 1;
         const key = this.pendingLoginAccountKey() ?? '';
         return {
           mode: 'login',
           background,
           isDarkMode: prefs.isDarkMode,
           accountLabel: hasMultipleAccounts ? (key === '' ? 'default' : key) : null,
+          progress: hasMultipleAccounts ? `Account ${keys.indexOf(key) + 1} of ${keys.length}` : null,
           canSkip: hasMultipleAccounts,
         };
       }
-      case 'deck':
+      case 'deck': {
+        const layout = this.computeColumnsLayout(this.hostLayout?.area.width ?? 0);
         return {
           mode: 'deck',
           background,
           isDarkMode: prefs.isDarkMode,
           isDarkModeUpdating: this.isDarkModeUpdating,
           hideAds: prefs.hideAds,
-          contentWidth: this.computeColumnsLayout(this.hostLayout?.area.width ?? 0).contentWidth,
+          contentWidth: layout.contentWidth,
           isWindowFittingEnabled: this.config?.columnWidth !== undefined,
+          zoomPercent: Math.round(prefs.pageZoom * 100),
+          canZoomIn: prefs.pageZoom < MAX_ZOOM,
+          canZoomOut: prefs.pageZoom > MIN_ZOOM,
+          columns: this.entries.map((entry, index) => ({
+            id: entry.id,
+            title: columnTitle(entry.column),
+            icon: columnIcon(entry.column),
+            handle: this.handleFor(entry.column),
+            x: layout.slots[index]?.x ?? 0,
+            width: layout.slots[index]?.width ?? 0,
+          })),
+          dialog: this.columnsDialogState(),
           version: {
             current: app.getVersion(),
             isDev: !app.isPackaged,
             latest: this.latestVersion,
           },
         };
+      }
     }
   }
 
@@ -435,6 +578,29 @@ export class Deck {
     this.finishSmokeTest();
     // The automatic column width depends on the area's width, and so does the scroll width.
     if (this.mode === 'deck' && previousWidth !== layout.area.width) this.sendState();
+  };
+
+  private readonly onHostDragFrame = (event: IpcMainEvent, frame: unknown): void => {
+    if (event.sender !== this.host.webContents || this.mode !== 'deck') return;
+    if (frame === null) {
+      this.dragFrame = null;
+      this.layoutViews();
+      return;
+    }
+    if (!isRecord(frame) || typeof frame.draggedId !== 'number' || !Array.isArray(frame.positions)) {
+      return;
+    }
+    const positions = frame.positions.filter(
+      (item): item is { id: number; x: number } =>
+        isRecord(item) && typeof item.id === 'number' && typeof item.x === 'number' && Number.isFinite(item.x),
+    );
+    // The dragged column passes over the others, so its view goes on top.
+    if (this.dragFrame?.draggedId !== frame.draggedId) {
+      const view = this.entryById(frame.draggedId)?.view;
+      if (view) this.window.contentView.addChildView(view);
+    }
+    this.dragFrame = { draggedId: frame.draggedId, positions };
+    this.layoutViews();
   };
 
   private readonly onHostAction = (event: IpcMainEvent, action: XDeckIpc.HostAction): void => {
@@ -457,19 +623,208 @@ export class Deck {
       case 'open-settings-folder':
         void shell.openPath(this.options.configDirectory);
         break;
+      case 'zoom':
+        if (action.direction === 'reset') this.setZoom(1);
+        else this.changeZoom(action.direction === 'in' ? ZOOM_STEP : -ZOOM_STEP);
+        break;
+      case 'refresh':
+        this.refresh();
+        break;
+      case 'fit-window':
+        this.fitWindowToContent();
+        break;
+      case 'column-menu':
+        this.showColumnMenu(action.id);
+        break;
+      case 'move-column':
+        this.moveColumn(action.id, action.delta);
+        break;
+      case 'reorder-columns':
+        if (Array.isArray(action.order)) this.reorderColumns(action.order);
+        break;
+      case 'columns-open':
+        this.openColumnsDialog();
+        break;
+      case 'columns-cancel':
+        this.closeColumnsDialog();
+        break;
+      case 'columns-save':
+        this.saveColumnsDialog();
+        break;
+      case 'columns-add':
+        this.addDraftColumn(action);
+        break;
+      case 'columns-remove':
+        this.columnsDraft?.rows.splice(action.index, 1);
+        this.sendState();
+        break;
+      case 'columns-move': {
+        const rows = this.columnsDraft?.rows;
+        const target = action.index + action.delta;
+        if (rows !== undefined && target >= 0 && target < rows.length) {
+          const [row] = rows.splice(action.index, 1);
+          if (row !== undefined) rows.splice(target, 0, row);
+          this.sendState();
+        }
+        break;
+      }
       case 'open-link': {
         const version = app.getVersion();
         const urls = {
           github: REPOSITORY_URL,
-          sponsor: SPONSOR_URL,
           release: releaseUrl(version),
           'latest-release': LATEST_RELEASE_URL,
         };
-        void shell.openExternal(urls[action.link]);
+        const url = urls[action.link];
+        if (typeof url === 'string') void shell.openExternal(url);
         break;
       }
     }
   };
+
+  // MARK: Moving columns
+
+  private showColumnMenu(id: number): void {
+    const index = this.entries.findIndex((entry) => entry.id === id);
+    if (index === -1 || this.mode !== 'deck') return;
+    Menu.buildFromTemplate([
+      {
+        label: 'Move Left',
+        enabled: index > 0,
+        click: () => {
+          this.moveColumn(id, -1);
+        },
+      },
+      {
+        label: 'Move Right',
+        enabled: index < this.entries.length - 1,
+        click: () => {
+          this.moveColumn(id, 1);
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Edit Columns…',
+        click: () => {
+          this.openColumnsDialog();
+        },
+      },
+    ]).popup();
+  }
+
+  private moveColumn(id: number, delta: -1 | 1): void {
+    const order = this.entries.map((entry) => entry.id);
+    const index = order.indexOf(id);
+    const target = index + delta;
+    if (index === -1 || target < 0 || target >= order.length) return;
+    order.splice(index, 1);
+    order.splice(target, 0, id);
+    this.reorderColumns(order);
+  }
+
+  /** Puts the columns in the order the host page sent and saves it. No page reloads. */
+  private reorderColumns(order: unknown[]): void {
+    if (this.mode !== 'deck') return;
+    const byId = new Map(this.entries.map((entry) => [entry.id, entry]));
+    const reordered = order.flatMap((id) => {
+      const entry = typeof id === 'number' ? byId.get(id) : undefined;
+      if (entry === undefined) return [];
+      byId.delete(id as number);
+      return [entry];
+    });
+    // Anything the host page didn't mention keeps its place at the end.
+    reordered.push(...byId.values());
+    const changed = reordered.some((entry, index) => entry !== this.entries[index]);
+    this.entries = reordered;
+    this.dragFrame = null;
+    if (changed) {
+      this.updateCompactRoles();
+      this.saveColumns();
+    }
+    this.sendState();
+    this.layoutViews();
+  }
+
+  // MARK: Columns window
+
+  private openColumnsDialog(): void {
+    if (this.mode !== 'deck') return;
+    this.columnsDraft = {
+      rows: this.entries.map((entry) => ({ id: entry.id, column: { ...entry.column } })),
+      error: null,
+    };
+    this.sendState();
+    this.layoutViews();
+  }
+
+  private closeColumnsDialog(): void {
+    this.columnsDraft = null;
+    this.sendState();
+    this.layoutViews();
+  }
+
+  private addDraftColumn(action: Extract<XDeckIpc.HostAction, { type: 'columns-add' }>): void {
+    const draft = this.columnsDraft;
+    if (draft === null) return;
+    const account = typeof action.account === 'string' && action.account.trim() !== '' ? action.account.trim() : undefined;
+    const text = typeof action.text === 'string' ? action.text.trim() : '';
+    let column: Column;
+    if (action.columnType === 'search' && text !== '') {
+      column = searchColumn(text, account);
+    } else if (action.columnType === 'custom') {
+      const url = normalizeCustomUrl(text);
+      if (url === null) {
+        draft.error = 'Type a web address, such as https://x.com/i/lists/123456789.';
+        this.sendState();
+        return;
+      }
+      column = { type: 'custom', url };
+    } else {
+      column = { type: action.columnType };
+    }
+    if (account !== undefined) column.account = account;
+    draft.rows.push({ id: null, column });
+    draft.error = null;
+    this.sendState();
+  }
+
+  /** Applies the Columns window: keeps the web views of the columns that stay, and saves. */
+  private saveColumnsDialog(): void {
+    const draft = this.columnsDraft;
+    if (draft === null) return;
+    if (draft.rows.length === 0) {
+      draft.error = 'Keep at least one column.';
+      this.sendState();
+      return;
+    }
+    const kept = new Set(draft.rows.flatMap((row) => (row.id === null ? [] : [row.id])));
+    for (const entry of this.entries) {
+      if (!kept.has(entry.id)) this.closeColumnView(entry);
+    }
+    if (this.expandedColumnId !== null && !kept.has(this.expandedColumnId)) this.expandedColumnId = null;
+    this.entries = draft.rows.map((row) => {
+      const existing = row.id === null ? undefined : this.entryById(row.id);
+      return existing ?? this.newEntry(row.column);
+    });
+    this.columnsDraft = null;
+    this.saveColumns();
+    // A new account signs in first; the other columns are kept meanwhile.
+    this.advance();
+  }
+
+  private saveColumns(): void {
+    const config = this.config;
+    if (config === null) return;
+    try {
+      writeFileSync(this.options.settingsPath, withColumns(readTextFile(this.options.settingsPath), config.columns));
+    } catch (error) {
+      void dialog.showMessageBox(this.window, {
+        type: 'warning',
+        message: "Couldn't save settings.json",
+        detail: `The new columns will be lost when the app quits. ${(error as Error).message}`,
+      });
+    }
+  }
 
   // MARK: Pages
 
@@ -482,16 +837,16 @@ export class Deck {
     const { library, prefs } = this.options;
     if (info.kind === 'login') return buildPageScript(library, LOGIN_SCRIPTS);
     const config = this.config;
-    const column = config?.columns[info.index];
+    const index = this.entries.findIndex((entry) => entry.id === info.id);
+    const column = this.entries[index]?.column;
     if (config === null || column === undefined) return '';
     return buildPageScript(
       library,
       columnScripts({
         type: column.type,
-        columnIndex: info.index,
+        columnId: info.id,
         isXColumn: isXColumn(column),
-        isLeftMostXColumn: info.index === leftMostXColumnIndex(config),
-        showsSideHeader: sideHeaderColumnIndices(config).has(info.index),
+        showsSideHeader: sideHeaderColumnIndices(config).has(index),
         hideAds: prefs.hideAds,
       }),
     );
@@ -516,29 +871,29 @@ export class Deck {
       case 'themeColor': {
         const color = normalizeThemeColor(message.body);
         if (color === null) return;
+        const changed = color !== this.background;
         this.setBackground(color);
         this.options.prefs.isDarkMode = isDarkThemeColor(color);
-        this.savePrefs();
+        if (changed) this.savePrefs();
         if (info.kind === 'column') this.setDarkModeUpdating(false);
-        this.sendState();
+        // Every X column reports the theme, so only redraw when something changed.
+        if (changed || info.kind === 'column') this.sendState();
         break;
       }
       case 'mediaOverlay': {
         if (info.kind !== 'column') return;
         if (message.body === 'close') {
-          this.expandedColumnIndex = null;
+          this.expandedColumnId = null;
         } else {
-          const index = Number(message.body);
-          if (Number.isInteger(index) && index >= 0 && index < this.columns.length) {
-            this.expandedColumnIndex = index;
-          }
+          const id = Number(message.body);
+          if (Number.isInteger(id) && this.entryById(id) !== undefined) this.expandedColumnId = id;
         }
         this.sendState();
         this.layoutViews();
         break;
       }
       case 'debug':
-        if (!app.isPackaged) console.log(`[column ${info.kind === 'column' ? info.index : 'login'}] ${message.body}`);
+        if (!app.isPackaged) console.log(`[column ${info.kind === 'column' ? info.id : 'login'}] ${message.body}`);
         break;
     }
   };
@@ -550,6 +905,7 @@ export class Deck {
 
   private registerIpc(): void {
     ipcMain.on('xdeck:host-layout', this.onHostLayout);
+    ipcMain.on('xdeck:host-drag-frame', this.onHostDragFrame);
     ipcMain.on('xdeck:host-action', this.onHostAction);
     ipcMain.on('xdeck:page-script', this.onPageScript);
     ipcMain.on('xdeck:page-message', this.onPageMessage);
@@ -558,6 +914,7 @@ export class Deck {
 
   private dispose(): void {
     ipcMain.off('xdeck:host-layout', this.onHostLayout);
+    ipcMain.off('xdeck:host-drag-frame', this.onHostDragFrame);
     ipcMain.off('xdeck:host-action', this.onHostAction);
     ipcMain.off('xdeck:page-script', this.onPageScript);
     ipcMain.off('xdeck:page-message', this.onPageMessage);
@@ -566,13 +923,11 @@ export class Deck {
   }
 
   private broadcast(script: string, onlyXColumns: boolean): void {
-    const config = this.config;
-    this.columns.forEach((entry, index) => {
-      if (entry === null) return;
-      const column = config?.columns[index];
-      if (onlyXColumns && (column === undefined || !isXColumn(column))) return;
+    for (const entry of this.entries) {
+      if (entry.view === null) continue;
+      if (onlyXColumns && !isXColumn(entry.column)) continue;
       void entry.view.webContents.executeJavaScript(script).catch(() => undefined);
-    });
+    }
   }
 
   // MARK: Commands
@@ -635,8 +990,10 @@ export class Deck {
       this.loginView?.webContents.reload();
       return;
     }
-    for (const entry of this.columns) {
-      if (entry !== null) void entry.view.webContents.loadURL(entry.url).catch(() => undefined);
+    for (const entry of this.entries) {
+      if (entry.view !== null && entry.url !== null) {
+        void entry.view.webContents.loadURL(entry.url).catch(() => undefined);
+      }
     }
   }
 
@@ -659,8 +1016,9 @@ export class Deck {
     void dialog
       .showMessageBox(this.window, {
         type: 'question',
-        message: 'Do you want to open the settings folder?',
-        detail: 'Edit settings.json and restart the app.',
+        message: 'Open the settings folder?',
+        detail:
+          'Edit settings.json, then restart XDeck Multi. To add, remove or move columns, use the Columns button instead.',
         buttons: ['Open Folder', 'Cancel'],
         defaultId: 0,
         cancelId: 1,
@@ -699,8 +1057,8 @@ export class Deck {
   async captureViews(directory: string): Promise<string[]> {
     const targets: [string, WebContentsView][] = [['host', this.host]];
     if (this.loginView !== null) targets.push(['login', this.loginView]);
-    this.columns.forEach((entry, index) => {
-      if (entry !== null) targets.push([`column-${index}`, entry.view]);
+    this.entries.forEach((entry, index) => {
+      if (entry.view !== null) targets.push([`column-${index}`, entry.view]);
     });
     const written: string[] = [];
     for (const [name, view] of targets) {
@@ -740,3 +1098,4 @@ function roundRect(rect: XDeckIpc.Rect): Electron.Rectangle {
     height: Math.max(0, Math.round(rect.height)),
   };
 }
+

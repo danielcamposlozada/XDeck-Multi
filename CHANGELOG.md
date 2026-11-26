@@ -2,6 +2,25 @@
 
 All notable changes to XDeck Multi are documented here. XDeck Multi is a fork of [XDeck](https://github.com/morishin/XDeck) 3.3.
 
+## 1.3.0
+
+The Windows and Linux edition catches up with macOS.
+
+### Added
+- A title bar on each column with its type, its name (a search shows its query) and its account (Windows and Linux).
+- Drag a column by its title bar to move it: the whole column follows the pointer, the others slide out of its way, and the slot it will land in stays marked. Honors reduced motion. Right-click a title bar for **Move Left**, **Move Right** and **Edit Columns…**, or press Alt+← / Alt+→ on a focused title bar (Windows and Linux).
+- **Columns** window to add, remove and reorder columns, with search columns from a query such as `from:NASA` and new accounts. Changes apply right away and are saved to `settings.json` (Windows and Linux).
+- The sign-in screen shows which account comes next ("Account 2 of 3") (Windows and Linux).
+
+### Changed
+- Redesigned bottom toolbar, as on macOS: icon buttons with tooltips, the zoom level as a percentage, grouped controls (Windows and Linux).
+- Zoom moves in 10% steps between 50% and 250% (Windows and Linux).
+- Moving, adding or removing columns never reloads the pages of the columns that stay; 𝕏's side navigation moves to the new first column in place (Windows and Linux).
+- Clearer settings prompt and error screen (Windows and Linux).
+
+### Removed
+- The "Buy me a coffee" button from the Windows and Linux toolbar, as on macOS since 1.0.0.
+
 ## 1.2.1
 
 ### Fixed

@@ -3,13 +3,19 @@ import {
   ConfigError,
   accountKey,
   accountKeys,
+  columnIcon,
+  columnTitle,
   columnUrl,
   isXColumn,
-  leftMostXColumnIndex,
+  normalizeCustomUrl,
   parseConfig,
   partitionFor,
   profileUrlFor,
+  sanitizeColumns,
+  searchColumn,
+  searchQuery,
   sideHeaderColumnIndices,
+  withColumns,
   type AppConfig,
 } from '../src/main/config';
 
@@ -67,7 +73,6 @@ describe('accounts', () => {
 
   it('keeps the side header on the first X column of each account', () => {
     expect([...sideHeaderColumnIndices(multiAccount)]).toEqual([0, 2]);
-    expect(leftMostXColumnIndex(multiAccount)).toBe(0);
   });
 
   it('gives each account its own persistent partition', () => {
@@ -100,5 +105,55 @@ describe('columns', () => {
     expect(profileUrlFor('jack')).toBe('https://x.com/jack');
     expect(profileUrlFor('../evil')).toBeNull();
     expect(profileUrlFor('')).toBeNull();
+  });
+});
+
+describe('column names and searches', () => {
+  it('names columns like the macOS title bars', () => {
+    expect(columnTitle({ type: 'forYou' })).toBe('For You');
+    expect(columnTitle({ type: 'search' })).toBe('Search');
+    expect(columnTitle({ type: 'custom', url: 'https://x.com/search?q=from%3ANASA&f=live' })).toBe('from:NASA');
+    expect(columnTitle({ type: 'custom', url: 'https://x.com/i/lists/1' })).toBe('/i/lists/1');
+    expect(columnTitle({ type: 'custom', url: 'https://example.com/' })).toBe('example.com');
+    expect(columnIcon({ type: 'custom', url: 'https://x.com/search?q=cats' })).toBe('searchQuery');
+    expect(columnIcon({ type: 'custom', url: 'https://example.com' })).toBe('custom');
+  });
+
+  it('builds search columns that show the latest posts', () => {
+    const column = searchColumn(' from:NASA ', 'work');
+    expect(column).toEqual({
+      type: 'custom',
+      url: 'https://x.com/search?q=from%3ANASA&f=live',
+      account: 'work',
+    });
+    expect(searchQuery(column)).toBe('from:NASA');
+    expect(searchColumn('cats', '  ').account).toBeUndefined();
+  });
+
+  it('normalizes typed URLs', () => {
+    expect(normalizeCustomUrl('x.com/i/lists/1')).toBe('https://x.com/i/lists/1');
+    expect(normalizeCustomUrl('  ')).toBeNull();
+  });
+});
+
+describe('saving columns', () => {
+  it('replaces only the columns and keeps the other keys', () => {
+    const text = withColumns('{"$schema":"./schema.json","columnWidth":380,"columns":[]}', [
+      { type: 'following' },
+      { type: 'custom', url: 'https://x.com/home', account: 'work' },
+    ]);
+    expect(JSON.parse(text)).toEqual({
+      $schema: './schema.json',
+      columnWidth: 380,
+      columns: [{ type: 'following' }, { type: 'custom', url: 'https://x.com/home', account: 'work' }],
+    });
+    expect(parseConfig(text).columns).toHaveLength(2);
+    expect(JSON.parse(withColumns('not json', [{ type: 'forYou' }]))).toEqual({ columns: [{ type: 'forYou' }] });
+  });
+
+  it('accepts only well-formed columns from the host page', () => {
+    expect(sanitizeColumns([{ type: 'following', account: ' ' }])).toEqual([{ type: 'following' }]);
+    expect(sanitizeColumns([{ type: 'bogus' }])).toBeNull();
+    expect(sanitizeColumns('nope')).toBeNull();
   });
 });

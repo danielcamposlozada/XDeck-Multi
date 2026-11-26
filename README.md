@@ -24,10 +24,10 @@
 
 ### Columns
 - For You, Following, Notifications, Profile, Search, and any 𝕏 page you want (a list, a search, a community).
-- Search columns: type a query like `from:NASA` when adding a column and it shows the latest posts (macOS).
-- **Columns** button: add, remove and drag to reorder columns. Changes show up right away (macOS).
-- Drag a column by its title bar to move it right in the window: the whole column follows the cursor and the others slide out of its way. Right-click a title bar to move it one place over (macOS).
-- A title bar on each column with its type and account (macOS).
+- Search columns: type a query like `from:NASA` when adding a column and it shows the latest posts.
+- **Columns** button: add, remove and reorder columns. Changes show up right away.
+- Drag a column by its title bar to move it right in the window: the whole column follows the cursor and the others slide out of its way. Right-click a title bar to move it one place over. No page reloads while you rearrange.
+- A title bar on each column with its type and account.
 - Opening a photo or video expands that column to the full window.
 
 ### Multiple accounts
@@ -82,10 +82,11 @@ On Windows and Linux, use Ctrl instead of ⌘.
 | ⌘ R | Refresh all columns |
 | ⌘ F | Fit the window to the columns |
 | ⌘ , | Open the settings folder |
+| Alt ← / Alt → | Move the focused column's title bar left or right (Windows and Linux) |
 
 ### Configuration
 
-On macOS, the **Columns** button covers adding, removing and reordering columns. Everything else lives in `settings.json`: press ⌘, to open its folder, edit the file and restart the app.
+The **Columns** button covers adding, removing and reordering columns. Everything else lives in `settings.json`: press ⌘, to open its folder, edit the file and restart the app.
 
 ```json
 {

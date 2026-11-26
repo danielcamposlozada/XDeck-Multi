@@ -41,15 +41,16 @@ describe('prefs', () => {
     expect(parsePrefs(null)).toEqual({ pageZoom: 1, isDarkMode: false, hideAds: false });
     expect(parsePrefs('garbage')).toEqual({ pageZoom: 1, isDarkMode: false, hideAds: false });
     expect(parsePrefs('{"pageZoom": 9, "isDarkMode": true, "hideAds": "yes"}')).toEqual({
-      pageZoom: 3,
+      pageZoom: 2.5,
       isDarkMode: true,
       hideAds: false,
     });
   });
 
-  it('keeps the zoom in steps of 0.1', () => {
-    expect(clampZoom(1 + 0.2 + 0.2)).toBe(1.4);
-    expect(clampZoom(0)).toBe(0.4);
+  it('keeps the zoom in steps of 0.1 between 50% and 250%, like the macOS edition', () => {
+    expect(clampZoom(1 + 0.1 + 0.1 + 0.1)).toBe(1.3);
+    expect(clampZoom(0)).toBe(0.5);
+    expect(clampZoom(3)).toBe(2.5);
   });
 
   it('reads the theme color like the macOS edition', () => {

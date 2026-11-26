@@ -8,9 +8,9 @@ export interface Prefs {
 
 export const DEFAULT_PREFS: Readonly<Prefs> = { pageZoom: 1, isDarkMode: false, hideAds: false };
 
-export const ZOOM_STEP = 0.2;
-const MIN_ZOOM = 0.4;
-const MAX_ZOOM = 3;
+export const ZOOM_STEP = 0.1;
+export const MIN_ZOOM = 0.5;
+export const MAX_ZOOM = 2.5;
 
 export function clampZoom(zoom: number): number {
   return Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom)) * 10) / 10;

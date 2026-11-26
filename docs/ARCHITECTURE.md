@@ -57,7 +57,11 @@ With more than one account, the login screen names the account and offers **Skip
 
 ### Side navigation
 
-X's side navigation (the menu, the Post button and the avatar) stays on the first X column of each account and is hidden on the rest (`hideSideHeader.js`, `hidePostArea.js`). That way each account can post, and you can see whose columns are whose.
+X's side navigation (the menu, the Post button and the avatar) stays on the first X column of each account and is hidden on the rest (`hideSideHeader.js`, `hidePostArea.js`). That way each account can post, and you can see whose columns are whose. Those two scripts give their styles ids (`xdeck-hide-side-header`, `xdeck-hide-post-area`), so when moving columns changes which one is first, the app adds or removes the styles on the open page instead of reloading it.
+
+## Moving columns
+
+Every column has an id that stays the same while the app runs; moving, adding or removing columns never rebuilds the pages of the columns that stay. Dragging a column by its title bar moves the whole column with the pointer, and the others slide aside once it passes their middle. The order is saved to `settings.json` on drop, keeping the file's other keys. The **Columns** window does the same with a list, and adds search columns (`https://x.com/search?q=…&f=live`).
 
 ## Scripts
 
@@ -68,7 +72,7 @@ The scripts in `shared/scripts/` run inside x.com and talk back to the app with 
 | `console.js`, `getElementsByXPath.js`, `waitForElement.js` | At page start | Forwards errors to the app; helpers. |
 | `detectMediaOverlay.js` | At page start | Reports when a photo or video opens, so its column fills the window. |
 | `findUserName.js` | After load (login) | Reports the signed-in user name. |
-| `findThemeColor.js` | After load (first X column, login) | Reports X's theme color; the app follows it (light or dark). |
+| `findThemeColor.js` | After load (every X column, login) | Reports X's theme color; the app follows it (light or dark). |
 | `clickForYouTab.js`, `clickFollowingTab.js` | After load | Selects the timeline tab. |
 | `hideSideHeader.js`, `hidePostArea.js` | After load | Hides the side navigation and the post box. |
 | `hideAds.js`, `showAds.js` | After load, or on toggle | Hides or shows promoted posts. |
@@ -80,7 +84,7 @@ The macOS edition still embeds its own copy of the scripts in `WebViewConfigurat
 
 ## Windows and Linux edition
 
-- One `BaseWindow`. A **host page** (`desktop/src/renderer/`) fills it and draws the toolbar, the login banner and the horizontal scroll bar. Each column is a `WebContentsView` placed on top of the host page: the host page reports where its columns area is and how far it's scrolled, and the main process positions the views (`layout.ts`).
+- One `BaseWindow`. A **host page** (`desktop/src/renderer/`) fills it and draws the column title bars, the toolbar, the Columns window, the login banner and the horizontal scroll bar. While a column is dragged, the host page animates the title bars and reports each frame (`xdeck:host-drag-frame`), and the main process moves the web views to match. The Columns window hides the web views while it's open, since they sit above the host page. Each column is a `WebContentsView` placed on top of the host page: the host page reports where its columns area is and how far it's scrolled, and the main process positions the views (`layout.ts`).
 - Sideways scrolling over a column (touchpad, Shift + wheel) is forwarded to the host page's scroll bar.
 - The user agent is Chrome's, without "Electron".
 - Pages run with `contextIsolation` and `sandbox` on and no Node.js. Links to other sites open in the default browser. Only clipboard and full-screen permissions are granted.

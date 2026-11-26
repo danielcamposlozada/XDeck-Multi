@@ -41,12 +41,12 @@ npm run dist:win     # release/XDeck-Multi-Setup-<version>.exe (run it on Window
 | Path | What it is |
 |---|---|
 | `src/main/main.ts` | Entry point: settings folder, user agent, single instance. |
-| `src/main/deck.ts` | The window: login screens, columns, toolbar actions, shortcuts. |
-| `src/main/config.ts` | `settings.json`, account keys and column URLs. |
+| `src/main/deck.ts` | The window: login screens, columns (with stable ids), moving them, the Columns window, toolbar actions, shortcuts. |
+| `src/main/config.ts` | `settings.json` (reading and saving the columns), account keys, column URLs, titles and search columns. |
 | `src/main/layout.ts` | Column widths, the same math as the macOS `ContentView`. |
 | `src/main/scripts.ts` | Builds each page's script from `shared/scripts`. |
 | `src/preload/column.ts` | Gives the shared scripts `webkit.messageHandlers.handler` and runs them. |
-| `src/preload/host.ts`, `src/renderer/` | The host page: toolbar, login banner and scroll bar. |
+| `src/preload/host.ts`, `src/renderer/` | The host page: column title bars and dragging, toolbar, Columns window, login banner and scroll bar. |
 | `test/` | Unit tests (Vitest), including a check that `shared/` matches the macOS edition. |
 
 How it works is explained in [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).

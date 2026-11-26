@@ -147,10 +147,6 @@ export function sideHeaderColumnIndices(config: AppConfig): Set<number> {
   return indices;
 }
 
-export function leftMostXColumnIndex(config: AppConfig): number {
-  return config.columns.findIndex(isXColumn);
-}
-
 /** The Electron session partition of an account. */
 export function partitionFor(key: string): string {
   return key === '' ? 'persist:default' : `persist:account-${encodeURIComponent(key)}`;
@@ -181,4 +177,99 @@ export function columnUrl(column: Column, profileUrl: string | undefined): strin
 
 export function profileUrlFor(userName: string): string | null {
   return /^[A-Za-z0-9_]{1,50}$/.test(userName) ? `https://x.com/${userName}` : null;
+}
+
+/** The query of a column that shows X search results, if it has one. */
+export function searchQuery(column: Column): string | null {
+  if (column.type !== 'custom') return null;
+  const url = parseUrl(column.url);
+  if (url === null || !X_HOSTS.includes(url.hostname) || url.pathname !== '/search') return null;
+  const query = url.searchParams.get('q');
+  return query !== null && query.trim() !== '' ? query : null;
+}
+
+const TYPE_NAMES: Readonly<Record<ColumnType, string>> = {
+  forYou: 'For You',
+  following: 'Following',
+  notifications: 'Notifications',
+  profile: 'Profile',
+  search: 'Search',
+  custom: 'Custom URL',
+};
+
+export function typeName(type: ColumnType): string {
+  return TYPE_NAMES[type];
+}
+
+/** A short name for the column: its search query, a custom URL's path, or the type's name. */
+export function columnTitle(column: Column): string {
+  const query = searchQuery(column);
+  if (query !== null) return query;
+  if (column.type !== 'custom') return typeName(column.type);
+  const url = parseUrl(column.url);
+  if (url === null) return column.url ?? typeName('custom');
+  return url.pathname === '' || url.pathname === '/' ? url.hostname : url.pathname;
+}
+
+export type ColumnIcon = ColumnType | 'searchQuery';
+
+/** Which icon a column shows: a magnifying glass for searches, otherwise its type's icon. */
+export function columnIcon(column: Column): ColumnIcon {
+  return searchQuery(column) !== null ? 'searchQuery' : column.type;
+}
+
+/** A column with X's latest results for a search. */
+export function searchColumn(query: string, account?: string): Column {
+  const url = new URL('https://x.com/search');
+  url.searchParams.set('q', query.trim());
+  url.searchParams.set('f', 'live');
+  const column: Column = { type: 'custom', url: url.href };
+  if (account !== undefined && account.trim() !== '') column.account = account.trim();
+  return column;
+}
+
+/** The custom URL as typed, with https:// added when the scheme is missing; null if invalid. */
+export function normalizeCustomUrl(text: string): string | null {
+  let value = text.trim();
+  if (value === '') return null;
+  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+  const url = parseUrl(value);
+  return url !== null && url.hostname !== '' ? url.href : null;
+}
+
+/** Validates columns sent by the host page (the Columns window) before they are saved. */
+export function sanitizeColumns(value: unknown): Column[] | null {
+  if (!Array.isArray(value)) return null;
+  const columns: Column[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || !isColumnType(item.type)) return null;
+    const column: Column = { type: item.type };
+    if (typeof item.url === 'string') column.url = item.url;
+    if (typeof item.account === 'string' && item.account.trim() !== '') column.account = item.account;
+    columns.push(column);
+  }
+  return columns;
+}
+
+/**
+ * settings.json with its columns replaced and every other key kept, like AppConfig.saveColumns in
+ * the macOS edition.
+ */
+export function withColumns(settingsText: string | null, columns: readonly Column[]): string {
+  let root: Record<string, unknown> = {};
+  if (settingsText !== null) {
+    try {
+      const data: unknown = JSON.parse(settingsText);
+      if (isRecord(data)) root = data;
+    } catch {
+      // Unreadable: write a fresh file with the columns.
+    }
+  }
+  root.columns = columns.map((column) => {
+    const item: Record<string, string> = { type: column.type };
+    if (column.url !== undefined) item.url = column.url;
+    if (column.account !== undefined) item.account = column.account;
+    return item;
+  });
+  return `${JSON.stringify(root, null, 2)}\n`;
 }

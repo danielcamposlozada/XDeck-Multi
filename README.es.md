@@ -24,10 +24,10 @@
 
 ### Columnas
 - Para ti, Siguiendo, Notificaciones, Perfil, Búsqueda y cualquier página de 𝕏 (una lista, una búsqueda, una comunidad).
-- Columnas de búsqueda: escribí algo como `from:NASA` al agregar una columna y muestra los posts más recientes (macOS).
-- Botón **Columns**: agregá, quitá y reordená columnas arrastrándolas. Los cambios se ven al instante (macOS).
-- Arrastrá una columna por su barra de título para moverla directo en la ventana: la columna entera sigue al cursor y las demás se corren. Con clic derecho en la barra de título la movés un lugar (macOS).
-- Una barra de título en cada columna con su tipo y su cuenta (macOS).
+- Columnas de búsqueda: escribí algo como `from:NASA` al agregar una columna y muestra los posts más recientes.
+- Botón **Columns**: agregá, quitá y reordená columnas. Los cambios se ven al instante.
+- Arrastrá una columna por su barra de título para moverla directo en la ventana: la columna entera sigue al cursor y las demás se corren. Con clic derecho en la barra de título la movés un lugar. Ninguna página se recarga mientras acomodás.
+- Una barra de título en cada columna con su tipo y su cuenta.
 - Al abrir una foto o un video, esa columna ocupa toda la ventana.
 
 ### Varias cuentas
@@ -82,10 +82,11 @@ En Windows y Linux, usá Ctrl en lugar de ⌘.
 | ⌘ R | Recargar todas las columnas |
 | ⌘ F | Ajustar la ventana a las columnas |
 | ⌘ , | Abrir la carpeta de configuración |
+| Alt ← / Alt → | Mover a la izquierda o a la derecha la columna cuya barra de título tiene el foco (Windows y Linux) |
 
 ### Configuración
 
-En macOS, el botón **Columns** sirve para agregar, quitar y reordenar columnas. Todo lo demás está en `settings.json`: apretá ⌘, para abrir su carpeta, editá el archivo y reiniciá la app.
+El botón **Columns** sirve para agregar, quitar y reordenar columnas. Todo lo demás está en `settings.json`: apretá ⌘, para abrir su carpeta, editá el archivo y reiniciá la app.
 
 ```json
 {
