@@ -122,6 +122,7 @@ struct WebViewConfigurations {
     private static let hidePostArea: String = """
         const style = document.createElement('style');
         style.type = 'text/css';
+        style.id = '\(compactStyleIDs[1])';
         style.innerHTML = "div:has(> main):has(> :nth-child(4)) > main div:has(> div > div[role='progressbar']) { display: none; }";
         document.querySelector('head').appendChild(style);
     """
@@ -197,9 +198,27 @@ struct WebViewConfigurations {
         // header: the side navigation of 𝕏's wide layout (older markup).
         // div:has(> nav[data-bottom-bar]): what narrow columns pin to the bottom, the navigation bar and
         // the floating Post button above it. Only the account's first column keeps the Post button.
+        style.id = '\(compactStyleIDs[0])';
         style.innerHTML = "header, div:has(> nav[data-bottom-bar]) { display: none !important; }";
         document.querySelector('head').appendChild(style);
         """
+
+    /// Ids of the styles that hideSideHeader and hidePostArea add, so they can be taken out again.
+    private static let compactStyleIDs = ["xdeck-hide-side-header", "xdeck-hide-post-area"]
+
+    /// Shows or hides 𝕏's side navigation and post area on the page already loaded, without a
+    /// reload, for a column whose role changed because the columns moved.
+    static func setCompactScript(_ isCompact: Bool) -> String {
+        if isCompact {
+            return """
+                if (!document.getElementById('\(compactStyleIDs[0])')) {
+                    (() => { \(hideSideHeader) })();
+                    (() => { \(hidePostArea) })();
+                }
+                """
+        }
+        return compactStyleIDs.map { "document.getElementById('\($0)')?.remove();" }.joined(separator: "\n")
+    }
 
     // 𝕏's main navigation, which narrow columns show as an iPhone-style bar pinned to the bottom.
     // It overlaps the last post and repeats what the first column's header already offers.

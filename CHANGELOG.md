@@ -2,6 +2,11 @@
 
 All notable changes to XDeck Multi are documented here. XDeck Multi is a fork of [XDeck](https://github.com/morishin/XDeck) 3.3.
 
+## 1.2.1
+
+### Fixed
+- Moving a column no longer reloads pages. When a column becomes (or stops being) an account's first column, 𝕏's side navigation now appears or hides in place (macOS).
+
 ## 1.2.0
 
 ### Added

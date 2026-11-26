@@ -18,6 +18,9 @@ struct WebView: NSViewRepresentable {
     /// Builds the web view's configuration. Called once, when the web view is created, rather than
     /// on every SwiftUI update: the configuration is only read at creation.
     var makeConfiguration: (() -> WKWebViewConfiguration)? = nil
+    /// Whether 𝕏's side navigation is hidden. It can change while the page is open (columns were
+    /// moved), and is then applied in place instead of rebuilding and reloading the web view.
+    var isCompact: Bool? = nil
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = makeConfiguration?() ?? WKWebViewConfiguration()
@@ -46,6 +49,16 @@ struct WebView: NSViewRepresentable {
             webView.evaluateJavaScript(script)
             context.coordinator.lastHandledScriptToken = scriptExecutionToken
         }
+        if isCompact != context.coordinator.lastIsCompact, let isCompact {
+            context.coordinator.lastIsCompact = isCompact
+            webView.evaluateJavaScript(WebViewConfigurations.setCompactScript(isCompact))
+            // Future loads (a refresh, a navigation) get the scripts for the new role too.
+            if let scripts = makeConfiguration?().userContentController.userScripts {
+                let controller = webView.configuration.userContentController
+                controller.removeAllUserScripts()
+                scripts.forEach(controller.addUserScript)
+            }
+        }
         if webView.pageZoom != pageZoom {
             webView.pageZoom = CGFloat(pageZoom)
         }
@@ -69,6 +82,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     var lastUrl: URL
     var refreshSwitch: Bool
     var lastHandledScriptToken: Int
+    var lastIsCompact: Bool?
 
     init(owner: WebView) {
         self.owner = owner
@@ -76,6 +90,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         // Start from the current value, so a column added after a refresh doesn't reload right away.
         self.refreshSwitch = owner.refreshSwitch
         self.lastHandledScriptToken = owner.scriptExecutionToken
+        self.lastIsCompact = owner.isCompact
         super.init()
     }
 

@@ -73,8 +73,8 @@ struct ContentView: View {
     @State var dragOffset: CGFloat = 0
     /// Width of the slots the dragged column has passed, subtracted from the cursor's travel.
     @State var dragShift: CGFloat = 0
-    /// The column order when the drag began. Each column's role (side navigation, theme detection)
-    /// comes from it until the drop, so no web view reloads while the user is still moving things.
+    /// The column order when the drag began. Which columns show 𝕏's side navigation comes from it
+    /// until the drop, so widths don't jump while the user is still moving things.
     @State var columnsAtDragStart: [AppConfig.Column]? = nil
 
     @State var measuredContentWidth: CGFloat = 0
@@ -200,8 +200,7 @@ struct ContentView: View {
         }
         dragShift = 0
         NSCursor.openHand.set()
-        // Roles are recomputed after the settle animation, so a column that gains or loses the
-        // side navigation reloads once it has landed, not mid-flight.
+        // The side navigation moves to its new column after the settle animation, in place.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             columnsAtDragStart = nil
             if didChangeOrder {
@@ -234,7 +233,7 @@ struct ContentView: View {
 
     private var hasMultipleAccounts: Bool { appConfig.accountKeys.count > 1 }
 
-    /// The order that decides each column's role: frozen while a column is being dragged.
+    /// The order that decides which columns show 𝕏's side navigation: frozen while a column is dragged.
     private var roleColumns: [AppConfig.Column] { columnsAtDragStart ?? appConfig.columns }
 
     /// Columns that keep 𝕏's side navigation: the first 𝕏 column of each account,
@@ -249,9 +248,6 @@ struct ContentView: View {
         }
         return ids
     }
-
-    /// The column whose page reports 𝕏's theme color.
-    private var leftMostXColumnID: UUID? { roleColumns.first { $0.isXColumn }?.id }
 
     /// Names the column and the account it uses, so similar-looking columns can be told apart.
     private func columnTitleBar(column: AppConfig.Column, columnWidth: CGFloat) -> some View {
@@ -331,7 +327,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func makeColumn(
-        column: AppConfig.Column, isLeftMostXColumn: Bool, showsSideHeader: Bool,
+        column: AppConfig.Column, showsSideHeader: Bool,
         profileUrl: URL?, columnWidth: CGFloat
     )
         -> some View
@@ -360,11 +356,10 @@ struct ContentView: View {
                     var scripts: [WebViewConfigurations.OnLoadScript] = [
                         .global, .detectMediaOverlay(columnID: column.id.uuidString),
                     ]
-                    if isLeftMostXColumn {
-                        scripts.append(.findThemeColor)
-                    }
                     if column.isXColumn {
-                        scripts.append(.hideBottomBar)
+                        // Every 𝕏 column reports the theme (they all share it), so no column has to
+                        // be rebuilt when a different one becomes the leftmost.
+                        scripts.append(contentsOf: [.findThemeColor, .hideBottomBar])
                         if !showsSideHeader {
                             scripts.append(contentsOf: [.hideSideHeader, .hidePostArea])
                         }
@@ -374,7 +369,8 @@ struct ContentView: View {
                     }
                     return WebViewConfigurations.makeConfiguration(
                         onLoadScripts: scripts + typeScripts, accountKey: column.accountKey)
-                }
+                },
+                isCompact: column.isXColumn ? !showsSideHeader : nil
             ).frame(width: width)
         }
     }
@@ -386,7 +382,6 @@ struct ContentView: View {
                     let columnCount = appConfig.columns.count
                     // Each account's first 𝕏 column keeps the side header, so there can be several.
                     let sideHeaderColumnIDs = self.sideHeaderColumnIDs
-                    let leftMostXColumnID = self.leftMostXColumnID
                     let sideHeaderCount = CGFloat(max(sideHeaderColumnIDs.count, 1))
 
                     // If a manual width is provided in the app config, use it;
@@ -473,7 +468,6 @@ struct ContentView: View {
                                     VStack(alignment: .leading, spacing: 0) {
                                         HStack(spacing: 0) {
                                             ForEach(appConfig.columns) { column in
-                                                let isLeftMostXColumn = column.id == leftMostXColumnID
                                                 let showsSideHeader = sideHeaderColumnIDs.contains(column.id)
                                                 let isExpanded = expandedColumnID == column.id
                                                 let isHidden = expandedColumnID != nil && !isExpanded
@@ -487,7 +481,6 @@ struct ContentView: View {
                                                         .frame(width: barWidth)
                                                     makeColumn(
                                                         column: column,
-                                                        isLeftMostXColumn: isLeftMostXColumn,
                                                         showsSideHeader: showsSideHeader,
                                                         profileUrl: profileUrls[column.accountKey],
                                                         columnWidth: isHidden ? 0 : effectiveWidth
@@ -528,9 +521,9 @@ struct ContentView: View {
                                                     if isDragging { transaction.animation = nil }
                                                 }
                                                 .opacity(isHidden ? 0 : 1)
-                                                // Its scripts are fixed when the web view is created, so rebuild it
-                                                // if adding or removing columns changes which role it plays.
-                                                .id("\(column.id)|\(isLeftMostXColumn)|\(showsSideHeader)")
+                                                // Identity is the column alone: moving it or changing its role
+                                                // (side navigation) never rebuilds and reloads its page.
+                                                .id(column.id)
                                             }
                                         }
                                     }
