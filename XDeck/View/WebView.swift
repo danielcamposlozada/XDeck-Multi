@@ -21,6 +21,9 @@ struct WebView: NSViewRepresentable {
     /// Whether 𝕏's side navigation is hidden. It can change while the page is open (columns were
     /// moved), and is then applied in place instead of rebuilding and reloading the web view.
     var isCompact: Bool? = nil
+    /// Reports video downloads to the page's download buttons; runs again whenever the token changes.
+    var downloadStatesScript: String? = nil
+    var downloadStatesToken: Int = 0
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = makeConfiguration?() ?? WKWebViewConfiguration()
@@ -59,6 +62,10 @@ struct WebView: NSViewRepresentable {
                 scripts.forEach(controller.addUserScript)
             }
         }
+        if downloadStatesToken != context.coordinator.lastDownloadStatesToken, let downloadStatesScript {
+            context.coordinator.lastDownloadStatesToken = downloadStatesToken
+            webView.evaluateJavaScript(downloadStatesScript)
+        }
         if webView.pageZoom != pageZoom {
             webView.pageZoom = CGFloat(pageZoom)
         }
@@ -83,6 +90,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     var refreshSwitch: Bool
     var lastHandledScriptToken: Int
     var lastIsCompact: Bool?
+    var lastDownloadStatesToken: Int = 0
 
     init(owner: WebView) {
         self.owner = owner

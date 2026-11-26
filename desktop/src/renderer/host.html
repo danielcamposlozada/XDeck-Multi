@@ -40,7 +40,11 @@
       <footer id="toolbar">
         <div id="notice" class="notice" role="status" hidden>
           <span id="notice-icon" class="notice-icon" aria-hidden="true"></span>
-          <span id="notice-text"></span>
+          <span class="notice-body">
+            <span id="notice-text"></span>
+            <span id="notice-bar" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><span id="notice-bar-fill"></span></span>
+          </span>
+          <span id="notice-detail" class="notice-detail"></span>
           <button id="notice-show" type="button" class="link accent">Show in folder</button>
           <button id="notice-dismiss" type="button" class="icon" title="Dismiss" aria-label="Dismiss">
             <span data-icon="close" aria-hidden="true"></span>

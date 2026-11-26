@@ -87,12 +87,14 @@ declare namespace XDeckIpc {
   }
 
   interface Notice {
+    kind: 'working' | 'done' | 'failed';
     text: string;
-    /** Set while the download runs. */
-    isWorking: boolean;
+    /** "45% · 12.0 MB of 40.0 MB" while downloading, then the file name or what to do next. */
+    detail: string | null;
+    /** Share done, or null while unknown. */
+    fraction: number | null;
     /** The saved file can be shown in the file manager. */
     canShowFile: boolean;
-    isError: boolean;
   }
 
   type NewColumnType = 'forYou' | 'following' | 'notifications' | 'profile' | 'search' | 'custom';

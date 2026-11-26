@@ -1,7 +1,7 @@
 // The window: login screens one account at a time, then a row of columns, each a WebContentsView
 // with its account's session. The port of ContentView, LoginView and WebView from the macOS edition.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   BaseWindow,
   Menu,
@@ -36,7 +36,7 @@ import {
   type AppConfig,
   type Column,
 } from './config';
-import { parseVideoRequest, uniqueVideoPath } from './download';
+import { combinedFraction, parseVideoRequest, progressText, uniqueVideoPath } from './download';
 import { computeLayout } from './layout';
 import { decideNavigation, isWebUrl } from './navigation';
 import {
@@ -98,6 +98,15 @@ interface ColumnEntry {
   isCompact: boolean;
 }
 
+interface VideoDownload {
+  url: string;
+  fileName: string;
+  state: 'downloading' | 'done' | 'failed';
+  received: number;
+  total: number;
+  path: string | null;
+}
+
 /** A row of the Columns window: an existing column (with its id) or one added there. */
 interface DraftColumn {
   id: number | null;
@@ -140,9 +149,12 @@ export class Deck {
   /** Where the host page has the columns while one is being dragged. */
   private dragFrame: XDeckIpc.DragFrame | null = null;
   private columnsDraft: { rows: DraftColumn[]; error: string | null } | null = null;
-  private notice: XDeckIpc.Notice | null = null;
-  private noticeFile: string | null = null;
+  /** Video downloads of this session, newest last. */
+  private downloads: VideoDownload[] = [];
+  /** The last finished download stays in the toolbar for a while. */
+  private finishedDownload: VideoDownload | null = null;
   private noticeTimer: NodeJS.Timeout | null = null;
+  private lastProgressUpdate = 0;
   private background: string;
   private isDarkModeUpdating = false;
   private darkModeTimer: NodeJS.Timeout | null = null;
@@ -564,7 +576,7 @@ export class Deck {
             width: layout.slots[index]?.width ?? 0,
           })),
           dialog: this.columnsDialogState(),
-          notice: this.notice,
+          notice: this.downloadNotice(),
           version: {
             current: app.getVersion(),
             isDev: !app.isPackaged,
@@ -674,10 +686,11 @@ export class Deck {
         break;
       }
       case 'show-downloaded-file':
-        if (this.noticeFile !== null) shell.showItemInFolder(this.noticeFile);
+        if (this.finishedDownload?.path) shell.showItemInFolder(this.finishedDownload.path);
         break;
       case 'dismiss-notice':
-        this.setNotice(null);
+        this.finishedDownload = null;
+        this.sendState();
         break;
       case 'open-link': {
         const version = app.getVersion();
@@ -839,43 +852,116 @@ export class Deck {
 
   // MARK: Video downloads
 
-  private setNotice(notice: XDeckIpc.Notice | null, file: string | null = null): void {
-    this.notice = notice;
-    this.noticeFile = file;
-    if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
-    this.noticeTimer = null;
-    if (notice !== null && !notice.isWorking) {
-      this.noticeTimer = setTimeout(() => {
-        this.setNotice(null);
-      }, 8000);
+  /** Progress of the downloads still running, or the last one that finished. */
+  private downloadNotice(): XDeckIpc.Notice | null {
+    const active = this.downloads.filter((download) => download.state === 'downloading');
+    const [first] = active;
+    if (first !== undefined) {
+      return {
+        kind: 'working',
+        text: active.length === 1 ? `Downloading ${first.fileName}` : `Downloading ${active.length} videos`,
+        detail: progressText(active),
+        fraction: combinedFraction(active),
+        canShowFile: false,
+      };
+    }
+    const finished = this.finishedDownload;
+    if (finished === null) return null;
+    return finished.state === 'done'
+      ? {
+          kind: 'done',
+          text: 'Saved to Downloads',
+          detail: finished.fileName,
+          fraction: null,
+          canShowFile: finished.path !== null,
+        }
+      : {
+          kind: 'failed',
+          text: "Couldn't download the video",
+          detail: 'Click its button to try again',
+          fraction: null,
+          canShowFile: false,
+        };
+  }
+
+  /** Updates the toolbar, the pages' download buttons and the taskbar progress. */
+  private reportDownloads(): void {
+    const states: Record<string, { state: string; fraction?: number }> = {};
+    for (const download of this.downloads) {
+      states[download.url] = {
+        state: download.state,
+        ...(download.total > 0 ? { fraction: Math.min(1, download.received / download.total) } : {}),
+      };
+    }
+    this.broadcast(`window.__xdeckDownloadStates && window.__xdeckDownloadStates(${JSON.stringify(states)});`, true);
+    const active = this.downloads.filter((download) => download.state === 'downloading');
+    if (active.length === 0) {
+      this.window.setProgressBar(-1);
+    } else {
+      const fraction = combinedFraction(active);
+      if (fraction === null) this.window.setProgressBar(2, { mode: 'indeterminate' });
+      else this.window.setProgressBar(fraction);
     }
     this.sendState();
+  }
+
+  private finishDownload(download: VideoDownload): void {
+    this.finishedDownload = download;
+    if (this.noticeTimer !== null) clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => {
+      if (this.finishedDownload === download) {
+        this.finishedDownload = null;
+        this.sendState();
+      }
+    }, 10_000);
+    if (!this.window.isFocused()) this.window.flashFrame(true);
+    this.reportDownloads();
   }
 
   /** Saves a video a column's download button asked for to the Downloads folder. */
   private async downloadVideo(body: string): Promise<void> {
     const request = parseVideoRequest(body);
     if (request === null) return;
-    const name = `${request.baseName}.mp4`;
-    this.setNotice({ text: `Downloading ${name}…`, isWorking: true, canShowFile: false, isError: false });
+    if (this.downloads.some((item) => item.url === request.url && item.state === 'downloading')) return;
+    // A finished or failed earlier try of the same video starts over.
+    this.downloads = this.downloads.filter((item) => item.url !== request.url);
+    const download: VideoDownload = {
+      url: request.url,
+      fileName: `${request.baseName}.mp4`,
+      state: 'downloading',
+      received: 0,
+      total: 0,
+      path: null,
+    };
+    this.downloads.push(download);
+    this.reportDownloads();
     try {
       const response = await net.fetch(request.url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = Buffer.from(await response.arrayBuffer());
+      if (!response.ok || response.body === null) throw new Error(`HTTP ${response.status}`);
+      download.total = Number(response.headers.get('content-length') ?? 0) || 0;
+      const chunks: Uint8Array[] = [];
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        download.received += value.byteLength;
+        // About ten updates a second is plenty for a progress bar.
+        const now = Date.now();
+        if (now - this.lastProgressUpdate > 100) {
+          this.lastProgressUpdate = now;
+          this.reportDownloads();
+        }
+      }
       const path = uniqueVideoPath(app.getPath('downloads'), request.baseName, existsSync);
-      writeFileSync(path, data);
-      this.setNotice(
-        { text: `Saved ${path.split(/[\\/]/).pop() ?? name}`, isWorking: false, canShowFile: true, isError: false },
-        path,
-      );
+      writeFileSync(path, Buffer.concat(chunks));
+      download.state = 'done';
+      download.path = path;
+      download.fileName = basename(path);
     } catch {
-      this.setNotice({
-        text: "Couldn't download the video. Try again in a moment.",
-        isWorking: false,
-        canShowFile: false,
-        isError: true,
-      });
+      download.state = 'failed';
     }
+    this.finishDownload(download);
   }
 
   // MARK: Pages

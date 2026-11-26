@@ -94,7 +94,12 @@
     };
 
     const svgNamespace = 'http://www.w3.org/2000/svg';
-    const makeIcon = () => {
+    const iconPaths = {
+        download: 'M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14',
+        done: 'm6 12.5 4 4 8-9',
+        failed: 'M12 7v6M12 17h.01',
+    };
+    const makeIcon = (name) => {
         const svg = document.createElementNS(svgNamespace, 'svg');
         svg.setAttribute('viewBox', '0 0 24 24');
         svg.setAttribute('width', '18');
@@ -106,9 +111,46 @@
         path.setAttribute('stroke-width', '2');
         path.setAttribute('stroke-linecap', 'round');
         path.setAttribute('stroke-linejoin', 'round');
-        path.setAttribute('d', 'M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14');
+        path.setAttribute('d', iconPaths[name]);
         svg.appendChild(path);
         return svg;
+    };
+
+    // What the app reports about each download, by video address: downloading (with the share
+    // done so far, or null when the size is unknown), done or failed.
+    const states = new Map();
+    const paint = (button) => {
+        const status = states.get(button.dataset.url);
+        button.classList.remove('xdeck-downloading', 'xdeck-done', 'xdeck-failed');
+        while (button.firstChild) button.removeChild(button.firstChild);
+        let label = 'Download video';
+        if (status && status.state === 'downloading') {
+            button.classList.add('xdeck-downloading');
+            const fraction = typeof status.fraction === 'number' ? status.fraction : null;
+            button.style.setProperty('--xdeck-progress', String(fraction === null ? 0.25 : fraction));
+            const text = document.createElement('span');
+            text.textContent = fraction === null ? '…' : Math.round(fraction * 100) + '%';
+            button.appendChild(text);
+            label = fraction === null ? 'Downloading video' : 'Downloading video, ' + Math.round(fraction * 100) + '%';
+        } else if (status && status.state === 'done') {
+            button.classList.add('xdeck-done');
+            button.appendChild(makeIcon('done'));
+            label = 'Saved to Downloads. Click to download again';
+        } else if (status && status.state === 'failed') {
+            button.classList.add('xdeck-failed');
+            button.appendChild(makeIcon('failed'));
+            label = 'Download failed. Click to try again';
+        } else {
+            button.appendChild(makeIcon('download'));
+        }
+        button.title = label;
+        button.setAttribute('aria-label', label);
+    };
+    // Called by the app whenever a download moves on.
+    window.__xdeckDownloadStates = (all) => {
+        states.clear();
+        Object.keys(all || {}).forEach((url) => states.set(url, all[url]));
+        document.querySelectorAll('.xdeck-download').forEach(paint);
     };
 
     const addButtons = () => {
@@ -120,9 +162,8 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'xdeck-download';
-            button.title = 'Download video';
-            button.setAttribute('aria-label', 'Download video');
-            button.appendChild(makeIcon());
+            button.dataset.url = info.url;
+            paint(button);
             // 𝕏 plays or opens the video on press; the button keeps its clicks to itself.
             ['pointerdown', 'mousedown', 'mouseup', 'touchstart'].forEach((type) => {
                 button.addEventListener(type, (event) => event.stopPropagation(), true);
@@ -130,8 +171,11 @@
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                button.classList.add('xdeck-downloading');
-                setTimeout(() => button.classList.remove('xdeck-downloading'), 1500);
+                const status = states.get(info.url);
+                if (status && status.state === 'downloading') return;
+                // Shows the download starting right away; the app reports the rest.
+                states.set(info.url, { state: 'downloading', fraction: null });
+                paint(button);
                 const message = JSON.stringify({
                     type: 'downloadVideo',
                     body: JSON.stringify({ url: info.url, name: info.name }),
@@ -146,7 +190,7 @@
     const start = () => {
         const style = document.createElement('style');
         style.type = 'text/css';
-        style.innerHTML = '.xdeck-download { position: absolute; top: 8px; right: 8px; z-index: 10; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: rgba(15, 20, 25, 0.75); color: #fff; cursor: pointer; opacity: 0.85; transition: opacity 0.15s, transform 0.15s; } .xdeck-download:hover { opacity: 1; transform: scale(1.06); } .xdeck-download:focus-visible { outline: 2px solid #1d9bf0; outline-offset: 2px; } .xdeck-download.xdeck-downloading { opacity: 0.45; }';
+        style.innerHTML = '.xdeck-download { position: absolute; top: 8px; right: 8px; z-index: 10; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: rgba(15, 20, 25, 0.75); color: #fff; cursor: pointer; opacity: 0.85; transition: opacity 0.15s, transform 0.15s; } .xdeck-download:hover { opacity: 1; transform: scale(1.06); } .xdeck-download:focus-visible { outline: 2px solid #1d9bf0; outline-offset: 2px; } .xdeck-download span { font: 700 10px/1 system-ui, sans-serif; } .xdeck-download.xdeck-downloading { opacity: 1; background: radial-gradient(circle, rgba(15, 20, 25, 0.9) 57%, transparent 59%), conic-gradient(#1d9bf0 calc(var(--xdeck-progress, 0) * 360deg), rgba(255, 255, 255, 0.3) 0); } .xdeck-download.xdeck-done { opacity: 1; background: #00ba7c; } .xdeck-download.xdeck-failed { opacity: 1; background: #f4a100; }';
         document.head.appendChild(style);
         new MutationObserver(scheduleButtons).observe(document.body, { childList: true, subtree: true });
         scheduleButtons();

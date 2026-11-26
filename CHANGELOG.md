@@ -2,6 +2,13 @@
 
 All notable changes to XDeck Multi are documented here. XDeck Multi is a fork of [XDeck](https://github.com/morishin/XDeck) 3.3.
 
+## 1.4.1
+
+### Changed
+- **You can follow every video download.** The ⬇︎ button turns into a ring with the percentage while the video downloads, a green ✓ when it's saved and an orange ⚠︎ if it fails (click it to try again).
+- The bottom toolbar shows a progress bar with the percentage and megabytes ("45% · 12.0 MB of 40.0 MB"), then **Saved to Downloads** with the file name and **Show in Finder** (or **Show in folder**).
+- When a download finishes, the Downloads stack in the Dock bounces and, if XDeck Multi is in the background, its icon asks for attention once (macOS). Windows and Linux show the progress on the taskbar and flash the window when it's done.
+
 ## 1.4.0
 
 ### Added

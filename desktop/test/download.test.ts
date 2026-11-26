@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseVideoRequest, uniqueVideoPath } from '../src/main/download';
+import { combinedFraction, parseVideoRequest, progressText, uniqueVideoPath } from '../src/main/download';
 
 describe('video downloads', () => {
   it('accepts only videos from X and makes a safe name', () => {
@@ -13,6 +13,17 @@ describe('video downloads', () => {
       'x-etc',
     );
     expect(parseVideoRequest('nope')).toBeNull();
+  });
+
+  it('reports progress like the macOS edition', () => {
+    const downloads = [
+      { received: 6_000_000, total: 20_000_000 },
+      { received: 6_000_000, total: 20_000_000 },
+    ];
+    expect(combinedFraction(downloads)).toBeCloseTo(0.3);
+    expect(progressText(downloads)).toBe('30% · 12.0 MB of 40.0 MB');
+    expect(combinedFraction([{ received: 500, total: 0 }])).toBeNull();
+    expect(progressText([{ received: 500_000, total: 0 }])).toBe('500 KB');
   });
 
   it('never overwrites a file', () => {

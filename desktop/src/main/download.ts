@@ -36,3 +36,32 @@ export function uniqueVideoPath(folder: string, baseName: string, exists: (path:
   for (let copy = 2; exists(path); copy++) path = join(folder, `${baseName} (${copy}).mp4`);
   return path;
 }
+
+export interface DownloadProgress {
+  received: number;
+  /** 0 or less while the size is unknown. */
+  total: number;
+}
+
+/** The share done of all the given downloads together, or null while a size is unknown. */
+export function combinedFraction(downloads: readonly DownloadProgress[]): number | null {
+  if (downloads.length === 0 || downloads.some((download) => download.total <= 0)) return null;
+  const total = downloads.reduce((sum, download) => sum + download.total, 0);
+  const received = downloads.reduce((sum, download) => sum + download.received, 0);
+  return Math.min(1, received / total);
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} bytes`;
+  if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} KB`;
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+/** "45% · 12.0 MB of 40.0 MB", or just what arrived so far while the size is unknown. */
+export function progressText(downloads: readonly DownloadProgress[]): string {
+  const received = downloads.reduce((sum, download) => sum + download.received, 0);
+  const fraction = combinedFraction(downloads);
+  if (fraction === null) return formatBytes(received);
+  const total = downloads.reduce((sum, download) => sum + download.total, 0);
+  return `${Math.round(fraction * 100)}% · ${formatBytes(received)} of ${formatBytes(total)}`;
+}

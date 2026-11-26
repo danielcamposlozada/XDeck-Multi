@@ -50,6 +50,7 @@ const ICONS: Readonly<Record<string, string>> = {
   down: `<path ${STROKE} d="m6 9 6 6 6-6"/>`,
   addAccount: `<g ${STROKE}><circle cx="10" cy="8" r="4"/><path d="M2 21a8 8 0 0 1 13-6.2M19 15v6M16 18h6"/></g>`,
   close: `<path ${STROKE} d="M6 6l12 12M18 6 6 18"/>`,
+  download: `<path ${STROKE} d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/>`,
   check: `<g ${STROKE}><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></g>`,
   warning: `<g ${STROKE}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></g>`,
 };
@@ -488,15 +489,26 @@ sections.dialog.addEventListener('keydown', (event) => {
 // MARK: Download notice
 
 function renderNotice(notice: XDeckIpc.Notice | null): void {
-  byId('notice').hidden = notice === null;
+  const box = byId('notice');
+  box.hidden = notice === null;
   if (notice === null) return;
+  box.className = `notice ${notice.kind}`;
   byId('notice-text').textContent = notice.text;
   byId('notice-text').title = notice.text;
+  byId('notice-detail').hidden = notice.detail === null;
+  byId('notice-detail').textContent = notice.detail ?? '';
+  const bar = byId('notice-bar');
+  bar.hidden = notice.kind !== 'working';
+  bar.classList.toggle('indeterminate', notice.fraction === null);
+  byId('notice-bar-fill').style.width = `${Math.round((notice.fraction ?? 0) * 100)}%`;
+  if (notice.fraction === null) bar.removeAttribute('aria-valuenow');
+  else bar.setAttribute('aria-valuenow', String(Math.round(notice.fraction * 100)));
   byId('notice-show').hidden = !notice.canShowFile;
+  byId('notice-dismiss').hidden = notice.kind === 'working';
   const icon = byId('notice-icon');
-  icon.className = `notice-icon ${notice.isWorking ? 'working' : notice.isError ? 'failed' : 'done'}`;
-  icon.replaceChildren();
-  if (!notice.isWorking) icon.append(iconElement(notice.isError ? 'warning' : 'check', ''));
+  icon.replaceChildren(
+    iconElement(notice.kind === 'working' ? 'download' : notice.kind === 'failed' ? 'warning' : 'check', ''),
+  );
 }
 
 // MARK: Render

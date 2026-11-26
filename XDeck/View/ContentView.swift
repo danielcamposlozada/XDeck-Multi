@@ -76,9 +76,12 @@ struct ContentView: View {
     /// The column order when the drag began. Which columns show 𝕏's side navigation comes from it
     /// until the drop, so widths don't jump while the user is still moving things.
     @State var columnsAtDragStart: [AppConfig.Column]? = nil
-    /// The last video download, shown in the toolbar.
-    @State var downloadNotice: DownloadNotice? = nil
-    @State var downloadNoticeToken = 0
+    /// Video downloads of this session, by video address, newest last.
+    @State var videoDownloads: [VideoDownload] = []
+    /// Bumped whenever a download moves on, so the pages' download buttons update.
+    @State var downloadStatesToken = 0
+    /// The last finished download stays in the toolbar for a while.
+    @State var finishedDownloadID: UUID? = nil
 
     @State var measuredContentWidth: CGFloat = 0
     @State var hasFitWindowToContent = false
@@ -148,57 +151,130 @@ struct ContentView: View {
         NSWorkspace.shared.open(AppConfig.configDirectoryUrl)
     }
 
-    private func showDownloadNotice(_ notice: DownloadNotice) {
-        downloadNotice = notice
-        downloadNoticeToken += 1
-        guard !notice.isWorking else { return }
-        let token = downloadNoticeToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-            if downloadNoticeToken == token { downloadNotice = nil }
+    private func updateDownload(_ id: UUID, _ change: (inout VideoDownload) -> Void) {
+        guard let index = videoDownloads.firstIndex(where: { $0.id == id }) else { return }
+        change(&videoDownloads[index])
+        downloadStatesToken += 1
+    }
+
+    /// The JavaScript that tells every page's download buttons how each download is going.
+    private var downloadStatesScript: String {
+        var states: [String: [String: Any]] = [:]
+        for download in videoDownloads {
+            var state: [String: Any] = ["state": download.state.rawValue]
+            if let fraction = download.fraction { state["fraction"] = fraction }
+            states[download.url.absoluteString] = state
         }
+        let json = (try? JSONSerialization.data(withJSONObject: states))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        return "window.__xdeckDownloadStates && window.__xdeckDownloadStates(\(json));"
     }
 
     /// Saves a video a column's download button asked for to the Downloads folder.
     private func startVideoDownload(_ body: String) {
-        guard let (url, name) = VideoDownloader.request(from: body) else { return }
-        showDownloadNotice(DownloadNotice(text: "Downloading \(name).mp4…", fileURL: nil, isWorking: true))
+        guard let (url, name) = VideoDownloader.request(from: body),
+              !videoDownloads.contains(where: { $0.url == url && $0.state == .downloading })
+        else { return }
+        // A finished or failed earlier try of the same video starts over.
+        videoDownloads.removeAll { $0.url == url }
+        let download = VideoDownload(url: url, fileName: name + ".mp4")
+        videoDownloads.append(download)
+        downloadStatesToken += 1
+        let id = download.id
         Task {
             do {
-                let file = try await VideoDownloader.download(url, baseName: name)
+                let file = try await VideoDownloader.download(url, baseName: name) { completed, total in
+                    DispatchQueue.main.async {
+                        updateDownload(id) { item in
+                            item.completedBytes = completed
+                            item.totalBytes = total
+                        }
+                    }
+                }
                 await MainActor.run {
-                    showDownloadNotice(DownloadNotice(text: "Saved \(file.lastPathComponent)", fileURL: file, isWorking: false))
+                    updateDownload(id) { item in
+                        item.state = .done
+                        item.fileURL = file
+                        item.fileName = file.lastPathComponent
+                    }
+                    finishedDownload(id, file: file)
                 }
             } catch {
                 await MainActor.run {
-                    showDownloadNotice(DownloadNotice(
-                        text: "Couldn't download the video. Try again in a moment.", fileURL: nil, isWorking: false))
+                    updateDownload(id) { $0.state = .failed }
+                    finishedDownload(id, file: nil)
                 }
             }
         }
     }
 
+    /// Keeps the result in the toolbar for a while and lets macOS show it too.
+    private func finishedDownload(_ id: UUID, file: URL?) {
+        finishedDownloadID = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+            if finishedDownloadID == id { finishedDownloadID = nil }
+        }
+        if let file {
+            // Makes the Downloads stack in the Dock bounce, as browsers do.
+            DistributedNotificationCenter.default().post(
+                name: Notification.Name("com.apple.DownloadFileFinished"), object: file.path(percentEncoded: false))
+        }
+        if !NSApp.isActive {
+            NSApp.requestUserAttention(.informationalRequest)
+        }
+    }
+
+    /// Progress of the downloads still running, or the last one that finished.
     @ViewBuilder
     private var downloadNoticeView: some View {
-        if let notice = downloadNotice {
+        let active = videoDownloads.filter { $0.state == .downloading }
+        let finished = finishedDownloadID.flatMap { id in videoDownloads.first { $0.id == id } }
+        if !active.isEmpty {
+            let fraction = VideoDownload.combinedFraction(of: active)
             HStack(spacing: 8) {
-                if notice.isWorking {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: notice.fileURL == nil ? "exclamationmark.triangle" : "checkmark.circle.fill")
-                        .foregroundColor(notice.fileURL == nil ? .orange : .green)
+                Image(systemName: "arrow.down.circle")
+                    .foregroundColor(.accentColor)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(active.count == 1 ? "Downloading \(active[0].fileName)" : "Downloading \(active.count) videos")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let fraction {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                    }
                 }
-                Text(notice.text)
+                .frame(width: 200)
+                Text(VideoDownload.progressText(of: active))
+                    .monospacedDigit()
+                    .foregroundColor(Self.textColor(for: backgroundColor))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Downloading. \(VideoDownload.progressText(of: active))")
+        } else if let finished {
+            HStack(spacing: 8) {
+                Image(systemName: finished.state == .done ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundColor(finished.state == .done ? .green : .orange)
+                Text(finished.state == .done ? "Saved to Downloads" : "Couldn't download the video")
+                    .lineLimit(1)
+                Text(finished.state == .done ? finished.fileName : "Click its button to try again")
+                    .foregroundColor(Self.textColor(for: backgroundColor))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: 260)
-                if let file = notice.fileURL {
+                    .frame(maxWidth: 240)
+                if let file = finished.fileURL {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([file])
                     }
                     .buttonStyle(.link)
                 }
                 Button {
-                    downloadNotice = nil
+                    finishedDownloadID = nil
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .bold))
@@ -209,7 +285,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+            .background(Capsule().fill((finished.state == .done ? Color.green : Color.orange).opacity(0.14)))
             .accessibilityElement(children: .contain)
         }
     }
@@ -439,7 +515,9 @@ struct ContentView: View {
                     return WebViewConfigurations.makeConfiguration(
                         onLoadScripts: scripts + typeScripts, accountKey: column.accountKey)
                 },
-                isCompact: column.isXColumn ? !showsSideHeader : nil
+                isCompact: column.isXColumn ? !showsSideHeader : nil,
+                downloadStatesScript: downloadStatesToken == 0 ? nil : downloadStatesScript,
+                downloadStatesToken: downloadStatesToken
             ).frame(width: width)
         }
     }
@@ -821,11 +899,42 @@ struct ContentView: View {
     }
 }
 
-struct DownloadNotice {
-    var text: String
-    /// The saved file, once the download finished.
-    var fileURL: URL?
-    var isWorking: Bool
+/// A video download of this session.
+struct VideoDownload: Identifiable {
+    enum State: String {
+        case downloading, done, failed
+    }
+
+    let id = UUID()
+    let url: URL
+    var fileName: String
+    var state: State = .downloading
+    var completedBytes: Int64 = 0
+    /// Unknown (0 or less) until the server sends the size.
+    var totalBytes: Int64 = 0
+    var fileURL: URL? = nil
+
+    var fraction: Double? {
+        totalBytes > 0 ? min(1, Double(completedBytes) / Double(totalBytes)) : nil
+    }
+
+    /// The share done of all the given downloads together, or nil while a size is unknown.
+    static func combinedFraction(of downloads: [VideoDownload]) -> Double? {
+        guard downloads.allSatisfy({ $0.totalBytes > 0 }) else { return nil }
+        let total = downloads.reduce(Int64(0)) { $0 + $1.totalBytes }
+        let done = downloads.reduce(Int64(0)) { $0 + $1.completedBytes }
+        return total > 0 ? min(1, Double(done) / Double(total)) : nil
+    }
+
+    /// "45% · 12 of 40 MB", or just the megabytes so far while the size is unknown.
+    static func progressText(of downloads: [VideoDownload]) -> String {
+        let done = downloads.reduce(Int64(0)) { $0 + $1.completedBytes }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        guard let fraction = combinedFraction(of: downloads) else { return formatter.string(fromByteCount: done) }
+        let total = downloads.reduce(Int64(0)) { $0 + $1.totalBytes }
+        return "\(Int((fraction * 100).rounded()))% · \(formatter.string(fromByteCount: done)) of \(formatter.string(fromByteCount: total))"
+    }
 }
 
 /// Downloads 𝕏 videos (only from 𝕏's video server) into the Downloads folder.
@@ -846,9 +955,39 @@ enum VideoDownloader {
         return (url, "x-" + (name.isEmpty ? "video" : String(name.prefix(80))))
     }
 
-    static func download(_ url: URL, baseName: String) async throws -> URL {
-        let (temporaryFile, response) = try await URLSession.shared.download(from: url)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+    /// Downloads the video, reporting the bytes received so far and the total (0 or less while
+    /// unknown), and moves it into the Downloads folder.
+    static func download(
+        _ url: URL, baseName: String, progress: @escaping (Int64, Int64) -> Void
+    ) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            var observation: NSKeyValueObservation?
+            var lastReported = Date.distantPast
+            let task = URLSession.shared.downloadTask(with: url) { temporaryFile, response, error in
+                observation?.invalidate()
+                do {
+                    if let error { throw error }
+                    guard let temporaryFile, (response as? HTTPURLResponse)?.statusCode == 200 else {
+                        throw URLError(.badServerResponse)
+                    }
+                    // The temporary file is deleted when this handler returns, so move it now.
+                    continuation.resume(returning: try moveToDownloads(temporaryFile, baseName: baseName))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            observation = task.observe(\.countOfBytesReceived) { task, _ in
+                // About ten updates a second is plenty for a progress bar.
+                let now = Date()
+                guard now.timeIntervalSince(lastReported) > 0.1 else { return }
+                lastReported = now
+                progress(task.countOfBytesReceived, task.countOfBytesExpectedToReceive)
+            }
+            task.resume()
+        }
+    }
+
+    private static func moveToDownloads(_ temporaryFile: URL, baseName: String) throws -> URL {
         let folder = try FileManager.default.url(
             for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         var destination = folder.appending(path: baseName + ".mp4")
