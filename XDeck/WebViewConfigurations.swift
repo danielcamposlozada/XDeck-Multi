@@ -122,7 +122,7 @@ struct WebViewConfigurations {
     private static let hidePostArea: String = """
         const style = document.createElement('style');
         style.type = 'text/css';
-        style.id = '\(compactStyleIDs[1])';
+        style.id = 'xdeck-hide-post-area';
         style.innerHTML = "div:has(> main):has(> :nth-child(4)) > main div:has(> div > div[role='progressbar']) { display: none; }";
         document.querySelector('head').appendChild(style);
     """
@@ -195,10 +195,10 @@ struct WebViewConfigurations {
     private static let hideSideHeader: String = """
         const style = document.createElement('style');
         style.type = 'text/css';
+        style.id = 'xdeck-hide-side-header';
         // header: the side navigation of 𝕏's wide layout (older markup).
         // div:has(> nav[data-bottom-bar]): what narrow columns pin to the bottom, the navigation bar and
         // the floating Post button above it. Only the account's first column keeps the Post button.
-        style.id = '\(compactStyleIDs[0])';
         style.innerHTML = "header, div:has(> nav[data-bottom-bar]) { display: none !important; }";
         document.querySelector('head').appendChild(style);
         """
